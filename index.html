@@ -1,0 +1,3400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador de Dinámica Lagrangiana | Péndulo Simple, Doble y Triple RK4</title>
+  <meta name="description" content="Simulador interactivo autónomo de alta fidelidad física para péndulos simple, doble y triple basado en formalismo Lagrangiano, integrador Runge-Kutta 4 en Web Worker, visualización de ecuaciones y telemetría en tiempo real.">
+  
+  <!-- Tipografía -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- KaTeX para visualización de ecuaciones matemáticas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       VARIABLES Y SISTEMA DE DISEÑO VISUAL HUD / GLASSMORPHISM
+       ========================================================================== */
+    :root {
+      --bg-main: #050811;
+      --bg-panel: rgba(13, 20, 36, 0.72);
+      --bg-panel-hover: rgba(18, 28, 50, 0.85);
+      --bg-input: rgba(8, 14, 26, 0.8);
+      
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(0, 240, 255, 0.25);
+      --border-active: #00f0ff;
+
+      --accent-cyan: #00f0ff;
+      --accent-emerald: #10b981;
+      --accent-lime: #39ff14;
+      --accent-amber: #fbbf24;
+      --accent-magenta: #ff007f;
+      --accent-purple: #a855f7;
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-hud: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+      --glow-cyan: 0 0 20px rgba(0, 240, 255, 0.35);
+      --glow-magenta: 0 0 20px rgba(255, 0, 127, 0.35);
+      --glow-emerald: 0 0 20px rgba(16, 185, 129, 0.35);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 20% 15%, rgba(0, 240, 255, 0.06) 0%, transparent 40%),
+        radial-gradient(circle at 80% 85%, rgba(255, 0, 127, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 60%);
+    }
+
+    /* HEADER SUPERIOR */
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 24px;
+      background: rgba(8, 13, 24, 0.9);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 50;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.4);
+    }
+
+    .brand-text h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #ffffff, #93c5fd, #67e8f9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* SOLAPAS DE SELECCIÓN DE SISTEMA (SIMPLE / DOBLE / TRIPLE) */
+    .system-nav-tabs {
+      display: flex;
+      background: rgba(15, 23, 42, 0.75);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      gap: 4px;
+    }
+
+    .sys-tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 0.82rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sys-tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .sys-tab-btn.active {
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .sys-tab-btn[data-system="simple"].active {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(16, 185, 129, 0.15));
+      border: 1px solid var(--accent-emerald);
+      color: #6ee7b7;
+      box-shadow: var(--glow-emerald);
+    }
+
+    .sys-tab-btn[data-system="double"].active {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), rgba(0, 240, 255, 0.15));
+      border: 1px solid var(--accent-cyan);
+      color: #67e8f9;
+      box-shadow: var(--glow-cyan);
+    }
+
+    .sys-tab-btn[data-system="triple"].active {
+      background: linear-gradient(135deg, rgba(255, 0, 127, 0.35), rgba(168, 85, 247, 0.2));
+      border: 1px solid var(--accent-magenta);
+      color: #f472b6;
+      box-shadow: var(--glow-magenta);
+    }
+
+    .sys-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .sys-tab-btn[data-system="simple"] .sys-indicator { background: var(--accent-emerald); box-shadow: 0 0 6px var(--accent-emerald); }
+    .sys-tab-btn[data-system="double"] .sys-indicator { background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); }
+    .sys-tab-btn[data-system="triple"] .sys-indicator { background: var(--accent-magenta); box-shadow: 0 0 6px var(--accent-magenta); }
+
+    .header-status-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid transparent;
+    }
+
+    .badge-rk4 {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: var(--accent-emerald);
+    }
+
+    .badge-fps {
+      background: rgba(0, 240, 255, 0.1);
+      border-color: rgba(0, 240, 255, 0.25);
+      color: var(--accent-cyan);
+    }
+
+    .badge-time {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: var(--border-subtle);
+      color: var(--text-secondary);
+    }
+
+    /* LAYOUT PRINCIPAL */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 440px;
+      flex: 1;
+      height: calc(100vh - 65px);
+      overflow: hidden;
+    }
+
+    @media (max-width: 1160px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+      }
+    }
+
+    /* LIENZO DE SIMULACIÓN */
+    .viewport-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #03060c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #mainCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .canvas-overlay-hints {
+      position: absolute;
+      bottom: 16px;
+      left: 20px;
+      pointer-events: none;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.5);
+      background: rgba(5, 10, 20, 0.75);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .canvas-quick-actions {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+      flex-wrap: wrap;
+    }
+
+    /* PANEL LATERAL */
+    .sidebar {
+      background: rgba(8, 13, 24, 0.85);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow-y: auto;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .sidebar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .sidebar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    .tab-nav {
+      display: flex;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(5, 9, 18, 0.9);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px 10px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+      background: rgba(0, 240, 255, 0.04);
+    }
+
+    .panel-content {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* SECCIONES HUD */
+    .card-section {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-hud);
+      transition: border-color 0.2s ease;
+    }
+
+    .card-section:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .card-section.tab-hidden {
+      display: none !important;
+    }
+
+    .section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-title .tag {
+      font-size: 0.65rem;
+      color: var(--accent-cyan);
+      font-family: var(--font-mono);
+    }
+
+    /* TARJETA DE ECUACIONES EN EL DIAGRAMA DE FASES */
+    .equations-card-box {
+      background: rgba(4, 8, 16, 0.85);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .equations-card-box::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 3px; height: 100%;
+      background: linear-gradient(180deg, var(--accent-cyan), var(--accent-magenta));
+    }
+
+    .equations-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .equations-container {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #e2e8f0;
+      line-height: 1.5;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+
+    .equations-container::-webkit-scrollbar {
+      height: 4px;
+    }
+    .equations-container::-webkit-scrollbar-thumb {
+      background: rgba(0, 240, 255, 0.3);
+      border-radius: 2px;
+    }
+
+    .eq-row {
+      margin-bottom: 8px;
+    }
+    .eq-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .eq-label {
+      font-size: 0.68rem;
+      color: var(--accent-cyan);
+      margin-bottom: 2px;
+      font-weight: 600;
+    }
+
+    .eq-math {
+      background: rgba(0, 0, 0, 0.45);
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      overflow-x: auto;
+    }
+
+    /* BOTONES */
+    .btn {
+      padding: 9px 13px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--border-subtle);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(0, 240, 255, 0.1));
+      border-color: var(--accent-cyan);
+      color: #ffffff;
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.2);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.4), rgba(0, 240, 255, 0.2));
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+    }
+
+    .btn-pause {
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(251, 191, 36, 0.1)) !important;
+      border-color: var(--accent-amber) !important;
+      box-shadow: 0 0 14px rgba(251, 191, 36, 0.25) !important;
+    }
+
+    .btn.active {
+      background: rgba(16, 185, 129, 0.25);
+      border-color: var(--accent-emerald);
+      color: #a7f3d0;
+    }
+
+    /* SLIDERS */
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 11px;
+    }
+
+    .control-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .control-val {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--accent-cyan);
+      font-size: 0.8rem;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.12);
+      outline: none;
+      transition: background 0.2s;
+    }
+
+    input[type="range"]:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-cyan);
+      transition: transform 0.1s, background-color 0.2s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+      background: #ffffff;
+    }
+
+    /* PRESETS */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+
+    .btn-preset {
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 0.76rem;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-preset:hover {
+      background: rgba(0, 240, 255, 0.08);
+      border-color: var(--border-glow);
+      color: var(--text-primary);
+    }
+
+    /* CANVAS DE TELEMETRÍA */
+    .telemetry-canvas-box {
+      width: 100%;
+      height: 145px;
+      background: #080c14;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+      position: relative;
+      margin-top: 6px;
+    }
+
+    .telemetry-canvas-box canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* MATRIZ DE TELEMETRÍA */
+    .data-matrix {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .data-cell {
+      background: rgba(5, 9, 18, 0.6);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 7px 9px;
+    }
+
+    .data-cell-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .data-cell-value {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 2px;
+    }
+
+    .val-cyan { color: var(--accent-cyan); }
+    .val-emerald { color: var(--accent-emerald); }
+    .val-amber { color: var(--accent-amber); }
+    .val-magenta { color: var(--accent-magenta); }
+    .val-purple { color: var(--accent-purple); }
+
+    /* SWITCHES */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider-switch {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: .3s;
+      border-radius: 20px;
+    }
+
+    .slider-switch:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider-switch {
+      background-color: var(--accent-cyan);
+    }
+
+    input:checked + .slider-switch:before {
+      transform: translateX(16px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-icon">⚛</div>
+      <div class="brand-text">
+        <h1 id="appHeaderTitle">SIMULADOR DE DINÁMICA LAGRANGIANA</h1>
+        <p id="appHeaderSub">Integrador Runge-Kutta 4 // Web Worker // Telemetría y Ecuaciones</p>
+      </div>
+    </div>
+
+    <!-- SOLAPAS DE SELECCIÓN DE SISTEMA -->
+    <nav class="system-nav-tabs" aria-label="Selector de Péndulo">
+      <button class="sys-tab-btn" data-system="simple" title="Péndulo Simple (1 Grado de Libertad)">
+        <span class="sys-indicator"></span> Péndulo Simple
+      </button>
+      <button class="sys-tab-btn active" data-system="double" title="Péndulo Doble Caótico (2 Grados de Libertad)">
+        <span class="sys-indicator"></span> Péndulo Doble
+      </button>
+      <button class="sys-tab-btn" data-system="triple" title="Péndulo Triple Hipercaótico (3 Grados de Libertad)">
+        <span class="sys-indicator"></span> Péndulo Triple
+      </button>
+    </nav>
+
+    <div class="header-status-group">
+      <div class="badge badge-rk4" title="Auditoría de Conservación de Energía Mecánica">
+        <span>●</span> <span id="hudEnergyError">ΔE/E₀: 0.00e+0</span>
+      </div>
+      <div class="badge badge-fps" title="Tasa de Refresco del Hilo Principal">
+        <span id="hudFps">60 FPS</span>
+      </div>
+      <div class="badge badge-time" title="Tiempo de Simulación Acumulado">
+        ⏱ <span id="hudSimTime">0.00 s</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="main-layout">
+    
+    <!-- LIENZO PRINCIPAL -->
+    <section class="viewport-container" aria-label="Visualizador de Péndulo">
+      <canvas id="mainCanvas"></canvas>
+
+      <!-- BOTONES DE ACCIÓN RÁPIDA -->
+      <div class="canvas-quick-actions">
+        <button id="btnPlayPause" class="btn btn-primary" title="Iniciar / Pausar (Espacio)">
+          <span class="icon">▶</span> Iniciar
+        </button>
+        <button id="btnReset" class="btn" title="Reiniciar a condiciones iniciales (R)">
+          <span class="icon">↺</span> Reiniciar
+        </button>
+        <button id="btnClearTrails" class="btn" title="Limpiar estelas luminosas (C)">
+          <span class="icon">🧹</span> Limpiar
+        </button>
+        <button id="btnAudio" class="btn" title="Activar/Desactivar síntesis acústica Web Audio API">
+          <span class="icon">🔇</span> Audio: OFF
+        </button>
+      </div>
+
+      <div class="canvas-overlay-hints" id="canvasHint">
+        💡 Arrastra cualquiera de las masas para modificar los ángulos iniciales en tiempo real
+      </div>
+    </section>
+
+    <!-- BARRA LATERAL -->
+    <aside class="sidebar">
+      
+      <!-- PESTAÑAS DEL PANEL LATERAL -->
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="tab-controls">⚙️ Parámetros</button>
+        <button class="tab-btn" data-tab="tab-telemetry">📊 Telemetría y Ecuaciones</button>
+        <button class="tab-btn" data-tab="tab-presets">⚡ Presets</button>
+      </nav>
+
+      <div class="panel-content">
+        
+        <!-- SECCIÓN 1: CONTROLES DE FÍSICA -->
+        <div id="section-controls" class="card-section" data-tab-content="tab-controls">
+          <div class="section-title">
+            <span id="paramSectionTitle">Parámetros del Sistema</span>
+            <span class="tag">Lagrange L = T - V</span>
+          </div>
+
+          <!-- BRAZO 1 (Siempre visible) -->
+          <div class="control-row" id="row-l1">
+            <div class="control-header">
+              <span>Longitud Brazo 1 (l₁)</span>
+              <span id="valL1" class="control-val">1.00 m</span>
+            </div>
+            <input type="range" id="sliderL1" min="0.2" max="2.5" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-m1">
+            <div class="control-header">
+              <span>Masa 1 (m₁)</span>
+              <span id="valM1" class="control-val">1.0 kg</span>
+            </div>
+            <input type="range" id="sliderM1" min="0.1" max="5.0" step="0.1" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-theta1">
+            <div class="control-header">
+              <span>Ángulo Inicial 1 (θ₁)</span>
+              <span id="valTheta1" class="control-val">90.0°</span>
+            </div>
+            <input type="range" id="sliderTheta1" min="-180" max="180" step="1" value="90">
+          </div>
+
+          <!-- BRAZO 2 (Doble y Triple) -->
+          <div class="control-row" id="row-l2">
+            <div class="control-header">
+              <span>Longitud Brazo 2 (l₂)</span>
+              <span id="valL2" class="control-val">1.00 m</span>
+            </div>
+            <input type="range" id="sliderL2" min="0.2" max="2.5" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-m2">
+            <div class="control-header">
+              <span>Masa 2 (m₂)</span>
+              <span id="valM2" class="control-val">1.0 kg</span>
+            </div>
+            <input type="range" id="sliderM2" min="0.1" max="5.0" step="0.1" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-theta2">
+            <div class="control-header">
+              <span>Ángulo Inicial 2 (θ₂)</span>
+              <span id="valTheta2" class="control-val">90.0°</span>
+            </div>
+            <input type="range" id="sliderTheta2" min="-180" max="180" step="1" value="90">
+          </div>
+
+          <!-- BRAZO 3 (Solo Triple) -->
+          <div class="control-row" id="row-l3">
+            <div class="control-header">
+              <span>Longitud Brazo 3 (l₃)</span>
+              <span id="valL3" class="control-val">1.00 m</span>
+            </div>
+            <input type="range" id="sliderL3" min="0.2" max="2.5" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-m3">
+            <div class="control-header">
+              <span>Masa 3 (m₃)</span>
+              <span id="valM3" class="control-val">1.0 kg</span>
+            </div>
+            <input type="range" id="sliderM3" min="0.1" max="5.0" step="0.1" value="1.0">
+          </div>
+
+          <div class="control-row" id="row-theta3">
+            <div class="control-header">
+              <span>Ángulo Inicial 3 (θ₃)</span>
+              <span id="valTheta3" class="control-val">90.0°</span>
+            </div>
+            <input type="range" id="sliderTheta3" min="-180" max="180" step="1" value="90">
+          </div>
+
+          <!-- AMBIENTE Y FRICCIÓN -->
+          <div class="control-row">
+            <div class="control-header">
+              <span>Aceleración Gravedad (g)</span>
+              <span id="valG" class="control-val">9.81 m/s²</span>
+            </div>
+            <input type="range" id="sliderG" min="0.0" max="30.0" step="0.1" value="9.81">
+          </div>
+
+          <div class="control-row">
+            <div class="control-header">
+              <span>Fricción / Amortiguamiento (b)</span>
+              <span id="valDamping" class="control-val">0.00</span>
+            </div>
+            <input type="range" id="sliderDamping" min="0.0" max="0.5" step="0.01" value="0.0">
+          </div>
+        </div>
+
+        <!-- SECCIÓN 2: MOTOR RK4 Y LIENZO -->
+        <div class="card-section" data-tab-content="tab-controls">
+          <div class="section-title">
+            <span>Motor Numérico RK4 y Lienzo</span>
+            <span class="tag">Web Worker</span>
+          </div>
+
+          <div class="control-row">
+            <div class="control-header">
+              <span>Velocidad Temporal</span>
+              <span id="valTimeScale" class="control-val">1.0x</span>
+            </div>
+            <input type="range" id="sliderTimeScale" min="0.1" max="3.0" step="0.1" value="1.0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-header">
+              <span>Sub-pasos RK4 / Frame (dt = 0.0005s)</span>
+              <span id="valSubSteps" class="control-val">30</span>
+            </div>
+            <input type="range" id="sliderSubSteps" min="5" max="100" step="5" value="30">
+          </div>
+
+          <div class="control-row">
+            <div class="control-header">
+              <span>Persistencia de Estela Luminosa</span>
+              <span id="valTrailLength" class="control-val">1200 pts</span>
+            </div>
+            <input type="range" id="sliderTrailLength" min="100" max="3000" step="100" value="1200">
+          </div>
+
+          <div class="toggle-row">
+            <span>Péndulo Sombra (Caos / Δθ = 10⁻⁴ rad)</span>
+            <label class="switch">
+              <input type="checkbox" id="toggleShadow" checked>
+              <span class="slider-switch"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <span>Vectores de Velocidad Tangencial</span>
+            <label class="switch">
+              <input type="checkbox" id="toggleVectors">
+              <span class="slider-switch"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <span>Cuadrícula Polar de Coordenadas</span>
+            <label class="switch">
+              <input type="checkbox" id="toggleGrid" checked>
+              <span class="slider-switch"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- SECCIÓN 3: PRESETS ESPECÍFICOS -->
+        <div class="card-section" data-tab-content="tab-presets">
+          <div class="section-title">
+            <span id="presetSectionTitle">Escenarios y Presets Notables</span>
+            <span class="tag" id="presetTag">Dinámica No Lineal</span>
+          </div>
+
+          <div class="preset-grid" id="presetGridContainer">
+            <!-- Los botones se generarán dinámicamente según el sistema activo -->
+          </div>
+        </div>
+
+        <!-- SECCIÓN 4: ESPACIO DE FASES Y ECUACIONES ACTIVAS -->
+        <div class="card-section" data-tab-content="tab-telemetry">
+          <div class="section-title">
+            <span>Espacio de Fases (θ vs ω)</span>
+            <select id="selectPhaseMode" style="background: rgba(0,0,0,0.5); color: #fff; border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px; font-size: 0.75rem;">
+              <!-- Opciones dinámicas -->
+            </select>
+          </div>
+
+          <!-- PANEL VISIBLE DE ECUACIONES EN EL DIAGRAMA DE FASES -->
+          <div class="equations-card-box">
+            <div class="equations-header">
+              <span>📐 Ecuaciones Dinámicas Resueltas</span>
+              <span class="tag" id="eqFormalismTag">Euler-Lagrange RK4</span>
+            </div>
+            <div class="equations-container" id="equationsContainer">
+              <!-- Renderizado de fórmulas -->
+            </div>
+          </div>
+
+          <div class="telemetry-canvas-box">
+            <canvas id="phaseCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- SECCIÓN 5: OSCILOSCOPIO DE ENERGÍA -->
+        <div class="card-section" data-tab-content="tab-telemetry">
+          <div class="section-title">
+            <span>Balance de Energía (T, V, E_total)</span>
+            <span class="tag">Auditoría RK4</span>
+          </div>
+
+          <div class="telemetry-canvas-box">
+            <canvas id="energyCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- SECCIÓN 6: MATRIZ DE TELEMETRÍA NUMÉRICA -->
+        <div class="card-section" data-tab-content="tab-telemetry tab-controls">
+          <div class="section-title">
+            <span>Matriz de Estado en Tiempo Real</span>
+            <span class="tag">Vectores</span>
+          </div>
+
+          <div class="data-matrix" id="telemetryMatrix">
+            <div class="data-cell" id="cell-theta1">
+              <div class="data-cell-label">Posición θ₁</div>
+              <div id="hudTheta1" class="data-cell-value val-emerald">90.0°</div>
+            </div>
+            <div class="data-cell" id="cell-theta2">
+              <div class="data-cell-label">Posición θ₂</div>
+              <div id="hudTheta2" class="data-cell-value val-cyan">90.0°</div>
+            </div>
+            <div class="data-cell" id="cell-theta3">
+              <div class="data-cell-label">Posición θ₃</div>
+              <div id="hudTheta3" class="data-cell-value val-magenta">90.0°</div>
+            </div>
+            <div class="data-cell" id="cell-omega1">
+              <div class="data-cell-label">Velocidad ω₁</div>
+              <div id="hudOmega1" class="data-cell-value">0.00 rad/s</div>
+            </div>
+            <div class="data-cell" id="cell-omega2">
+              <div class="data-cell-label">Velocidad ω₂</div>
+              <div id="hudOmega2" class="data-cell-value">0.00 rad/s</div>
+            </div>
+            <div class="data-cell" id="cell-omega3">
+              <div class="data-cell-label">Velocidad ω₃</div>
+              <div id="hudOmega3" class="data-cell-value">0.00 rad/s</div>
+            </div>
+            <div class="data-cell" id="cell-alpha1">
+              <div class="data-cell-label">Aceleración α₁</div>
+              <div id="hudAlpha1" class="data-cell-value">0.00 rad/s²</div>
+            </div>
+            <div class="data-cell" id="cell-alpha2">
+              <div class="data-cell-label">Aceleración α₂</div>
+              <div id="hudAlpha2" class="data-cell-value">0.00 rad/s²</div>
+            </div>
+            <div class="data-cell" id="cell-alpha3">
+              <div class="data-cell-label">Aceleración α₃</div>
+              <div id="hudAlpha3" class="data-cell-value">0.00 rad/s²</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-cell-label">Energía Cinética (T)</div>
+              <div id="hudEnergyT" class="data-cell-value val-amber">0.00 J</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-cell-label">Energía Potencial (V)</div>
+              <div id="hudEnergyV" class="data-cell-value val-purple">0.00 J</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-cell-label">Energía Total (E)</div>
+              <div id="hudEnergyTotal" class="data-cell-value val-emerald">0.00 J</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-cell-label">Divergencia Caótica</div>
+              <div id="hudDivergence" class="data-cell-value val-magenta">0.000 m</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- =========================================================================
+       LÓGICA AUTÓNOMA INTEGRADA EN UN ÚNICO ARCHIVO (JAVASCRIPT)
+       ========================================================================= -->
+  <script>
+    /**
+     * ============================================================================
+     * CÓDIGO DEL MOTOR FÍSICO LAGRANGIANO GENERALIZADO (N = 1, 2, 3) - WEB WORKER
+     * ============================================================================
+     */
+    const PHYSICS_WORKER_CODE = `
+    let systemMode = 'double'; // 'simple', 'double', 'triple'
+    let params = {
+      l1: 1.0, l2: 1.0, l3: 1.0,
+      m1: 1.0, m2: 1.0, m3: 1.0,
+      g: 9.81,
+      damping: 0.0
+    };
+    
+    // Estados: [theta1, theta2, theta3, omega1, omega2, omega3]
+    let state = [Math.PI / 2, Math.PI / 2, Math.PI / 2, 0.0, 0.0, 0.0];
+    let shadowEnabled = true;
+    let shadowDelta = 1e-4;
+    let shadowState = [Math.PI / 2 + shadowDelta, Math.PI / 2, Math.PI / 2, 0.0, 0.0, 0.0];
+    let dt = 0.0005;
+    let subSteps = 30;
+    let timeScale = 1.0;
+    let isRunning = false;
+    let simulationTime = 0.0;
+    let stepCounter = 0;
+    let initialTotalEnergy = 0.0;
+    let shadowInitialEnergy = 0.0;
+    let workerTimer = null;
+
+    /**
+     * Solución de sistema lineal 3x3 por Regla de Cramer (exacta y ultra-rápida)
+     */
+    function solve3x3(A, b) {
+      const a00 = A[0][0], a01 = A[0][1], a02 = A[0][2];
+      const a10 = A[1][0], a11 = A[1][1], a12 = A[1][2];
+      const a20 = A[2][0], a21 = A[2][1], a22 = A[2][2];
+
+      const det = a00 * (a11 * a22 - a12 * a21) -
+                  a01 * (a10 * a22 - a12 * a20) +
+                  a02 * (a10 * a21 - a11 * a20);
+
+      if (Math.abs(det) < 1e-14) return [0, 0, 0];
+      const invDet = 1.0 / det;
+
+      const b0 = b[0], b1 = b[1], b2 = b[2];
+
+      const x0 = (b0 * (a11 * a22 - a12 * a21) -
+                  a01 * (b1 * a22 - a12 * b2) +
+                  a02 * (b1 * a21 - a11 * b2)) * invDet;
+
+      const x1 = (a00 * (b1 * a22 - a12 * b2) -
+                  b0 * (a10 * a22 - a12 * a20) +
+                  a02 * (a10 * b2 - b1 * a20)) * invDet;
+
+      const x2 = (a00 * (a11 * b2 - b1 * a21) -
+                  a01 * (a10 * b2 - b1 * a20) +
+                  b0 * (a10 * a21 - a11 * a20)) * invDet;
+
+      return [x0, x1, x2];
+    }
+
+    /**
+     * Derivadas de Euler-Lagrange para N = 1, 2, 3
+     */
+    function lagrangianDerivatives(Y, p, mode) {
+      const g = p.g;
+      const b = p.damping;
+
+      if (mode === 'simple') {
+        const th1 = Y[0];
+        const w1 = Y[3];
+        const l1 = p.l1;
+        const m1 = p.m1;
+
+        // alpha1 = - (g / l1) * sin(th1) - (b / (m1 * l1^2)) * w1
+        const alpha1 = - (g / l1) * Math.sin(th1) - (b / (m1 * l1 * l1)) * w1;
+        return [w1, 0, 0, alpha1, 0, 0];
+      }
+
+      if (mode === 'double') {
+        const th1 = Y[0];
+        const th2 = Y[1];
+        const w1 = Y[3];
+        const w2 = Y[4];
+
+        const m1 = p.m1;
+        const m2 = p.m2;
+        const l1 = p.l1;
+        const l2 = p.l2;
+
+        const delta = th1 - th2;
+        const sinD = Math.sin(delta);
+        const cosD = Math.cos(delta);
+        const sin1 = Math.sin(th1);
+        const sin2 = Math.sin(th2);
+
+        const g1 = -m2 * l2 * w2 * w2 * sinD - (m1 + m2) * g * sin1 - b * w1;
+        const g2 = l1 * w1 * w1 * sinD - g * sin2 - b * w2;
+
+        const denom = m1 + m2 * sinD * sinD;
+        const denom1 = l1 * denom;
+        const denom2 = l2 * denom;
+
+        const alpha1 = (g1 - m2 * cosD * g2) / denom1;
+        const alpha2 = ((m1 + m2) * g2 - cosD * g1) / denom2;
+
+        return [w1, w2, 0, alpha1, alpha2, 0];
+      }
+
+      // TRIPLE PENDULUM (N = 3)
+      const th1 = Y[0], th2 = Y[1], th3 = Y[2];
+      const w1 = Y[3], w2 = Y[4], w3 = Y[5];
+      const m1 = p.m1, m2 = p.m2, m3 = p.m3;
+      const l1 = p.l1, l2 = p.l2, l3 = p.l3;
+
+      // Matriz de Masa Simétrica M (3x3): M_ij = mu_ij * l_i * l_j * cos(th_i - th_j)
+      const mu11 = m1 + m2 + m3;
+      const mu12 = m2 + m3;
+      const mu13 = m3;
+      const mu22 = m2 + m3;
+      const mu23 = m3;
+      const mu33 = m3;
+
+      const cos12 = Math.cos(th1 - th2);
+      const cos13 = Math.cos(th1 - th3);
+      const cos23 = Math.cos(th2 - th3);
+
+      const sin12 = Math.sin(th1 - th2);
+      const sin13 = Math.sin(th1 - th3);
+      const sin23 = Math.sin(th2 - th3);
+
+      const M = [
+        [mu11 * l1 * l1, mu12 * l1 * l2 * cos12, mu13 * l1 * l3 * cos13],
+        [mu12 * l1 * l2 * cos12, mu22 * l2 * l2, mu23 * l2 * l3 * cos23],
+        [mu13 * l1 * l3 * cos13, mu23 * l2 * l3 * cos23, mu33 * l3 * l3]
+      ];
+
+      // Vector de Fuerzas Generalizadas F (3x1)
+      const F1 = - mu12 * l1 * l2 * w2 * w2 * sin12 - mu13 * l1 * l3 * w3 * w3 * sin13 - mu11 * g * l1 * Math.sin(th1) - b * w1;
+      const F2 =   mu12 * l1 * l2 * w1 * w1 * sin12 - mu23 * l2 * l3 * w3 * w3 * sin23 - mu22 * g * l2 * Math.sin(th2) - b * w2;
+      const F3 =   mu13 * l1 * l3 * w1 * w1 * sin13 + mu23 * l2 * l3 * w2 * w2 * sin23 - mu33 * g * l3 * Math.sin(th3) - b * w3;
+
+      const alphas = solve3x3(M, [F1, F2, F3]);
+
+      return [w1, w2, w3, alphas[0], alphas[1], alphas[2]];
+    }
+
+    /**
+     * Paso de Integración RK4 de 4º Orden
+     */
+    function rk4Step(Y, h, p, mode) {
+      const k1 = lagrangianDerivatives(Y, p, mode);
+      const Y2 = [
+        Y[0] + 0.5 * h * k1[0],
+        Y[1] + 0.5 * h * k1[1],
+        Y[2] + 0.5 * h * k1[2],
+        Y[3] + 0.5 * h * k1[3],
+        Y[4] + 0.5 * h * k1[4],
+        Y[5] + 0.5 * h * k1[5]
+      ];
+      const k2 = lagrangianDerivatives(Y2, p, mode);
+      const Y3 = [
+        Y[0] + 0.5 * h * k2[0],
+        Y[1] + 0.5 * h * k2[1],
+        Y[2] + 0.5 * h * k2[2],
+        Y[3] + 0.5 * h * k2[3],
+        Y[4] + 0.5 * h * k2[4],
+        Y[5] + 0.5 * h * k2[5]
+      ];
+      const k3 = lagrangianDerivatives(Y3, p, mode);
+      const Y4 = [
+        Y[0] + h * k3[0],
+        Y[1] + h * k3[1],
+        Y[2] + h * k3[2],
+        Y[3] + h * k3[3],
+        Y[4] + h * k3[4],
+        Y[5] + h * k3[5]
+      ];
+      const k4 = lagrangianDerivatives(Y4, p, mode);
+
+      const h6 = h / 6.0;
+      return [
+        Y[0] + h6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]),
+        Y[1] + h6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]),
+        Y[2] + h6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]),
+        Y[3] + h6 * (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]),
+        Y[4] + h6 * (k1[4] + 2 * k2[4] + 2 * k3[4] + k4[4]),
+        Y[5] + h6 * (k1[5] + 2 * k2[5] + 2 * k3[5] + k4[5])
+      ];
+    }
+
+    /**
+     * Cálculo Exacto de Energías Cinética (T) y Potencial (V)
+     */
+    function computeEnergy(Y, p, mode) {
+      const g = p.g;
+
+      if (mode === 'simple') {
+        const th1 = Y[0];
+        const w1 = Y[3];
+        const m1 = p.m1;
+        const l1 = p.l1;
+
+        const T = 0.5 * m1 * l1 * l1 * w1 * w1;
+        const V = - m1 * g * l1 * Math.cos(th1);
+        return { kinetic: T, potential: V, total: T + V };
+      }
+
+      if (mode === 'double') {
+        const th1 = Y[0], th2 = Y[1];
+        const w1 = Y[3], w2 = Y[4];
+        const m1 = p.m1, m2 = p.m2;
+        const l1 = p.l1, l2 = p.l2;
+
+        const T = 0.5 * (m1 + m2) * l1 * l1 * w1 * w1 +
+                  0.5 * m2 * l2 * l2 * w2 * w2 +
+                  m2 * l1 * l2 * w1 * w2 * Math.cos(th1 - th2);
+
+        const V = - (m1 + m2) * g * l1 * Math.cos(th1) - m2 * g * l2 * Math.cos(th2);
+        return { kinetic: T, potential: V, total: T + V };
+      }
+
+      // TRIPLE PENDULUM
+      const th1 = Y[0], th2 = Y[1], th3 = Y[2];
+      const w1 = Y[3], w2 = Y[4], w3 = Y[5];
+      const m1 = p.m1, m2 = p.m2, m3 = p.m3;
+      const l1 = p.l1, l2 = p.l2, l3 = p.l3;
+
+      // Velocidades cartesianas
+      const vx1 = l1 * w1 * Math.cos(th1);
+      const vy1 = l1 * w1 * Math.sin(th1);
+
+      const vx2 = vx1 + l2 * w2 * Math.cos(th2);
+      const vy2 = vy1 + l2 * w2 * Math.sin(th2);
+
+      const vx3 = vx2 + l3 * w3 * Math.cos(th3);
+      const vy3 = vy2 + l3 * w3 * Math.sin(th3);
+
+      const T1 = 0.5 * m1 * (vx1 * vx1 + vy1 * vy1);
+      const T2 = 0.5 * m2 * (vx2 * vx2 + vy2 * vy2);
+      const T3 = 0.5 * m3 * (vx3 * vx3 + vy3 * vy3);
+      const T = T1 + T2 + T3;
+
+      const y1 = - l1 * Math.cos(th1);
+      const y2 = y1 - l2 * Math.cos(th2);
+      const y3 = y2 - l3 * Math.cos(th3);
+
+      const V = m1 * g * y1 + m2 * g * y2 + m3 * g * y3;
+
+      return { kinetic: T, potential: V, total: T + V };
+    }
+
+    function polarToCartesian(th1, th2, th3, l1, l2, l3, mode) {
+      const x1 = l1 * Math.sin(th1);
+      const y1 = -l1 * Math.cos(th1);
+
+      if (mode === 'simple') {
+        return { x1, y1, x2: x1, y2: y1, x3: x1, y3: y1 };
+      }
+
+      const x2 = x1 + l2 * Math.sin(th2);
+      const y2 = y1 - l2 * Math.cos(th2);
+
+      if (mode === 'double') {
+        return { x1, y1, x2, y2, x3: x2, y3: y2 };
+      }
+
+      const x3 = x2 + l3 * Math.sin(th3);
+      const y3 = y2 - l3 * Math.cos(th3);
+
+      return { x1, y1, x2, y2, x3, y3 };
+    }
+
+    function wrapAngle(angle) {
+      let a = (angle + Math.PI) % (2 * Math.PI);
+      if (a < 0) a += 2 * Math.PI;
+      return a - Math.PI;
+    }
+
+    function simulationTick() {
+      if (!isRunning) return;
+
+      const actualDt = dt * timeScale;
+      const currentDerivs = lagrangianDerivatives(state, params, systemMode);
+
+      for (let i = 0; i < subSteps; i++) {
+        state = rk4Step(state, actualDt, params, systemMode);
+        if (shadowEnabled) {
+          shadowState = rk4Step(shadowState, actualDt, params, systemMode);
+        }
+      }
+
+      simulationTime += actualDt * subSteps;
+      stepCounter += subSteps;
+
+      const energy = computeEnergy(state, params, systemMode);
+      const energyError = initialTotalEnergy !== 0 
+        ? Math.abs((energy.total - initialTotalEnergy) / initialTotalEnergy)
+        : 0.0;
+
+      const cartesian = polarToCartesian(state[0], state[1], state[2], params.l1, params.l2, params.l3, systemMode);
+
+      let shadowCartesian = null;
+      let shadowDivergence = 0.0;
+      if (shadowEnabled) {
+        shadowCartesian = polarToCartesian(shadowState[0], shadowState[1], shadowState[2], params.l1, params.l2, params.l3, systemMode);
+        const tipKeyX = systemMode === 'simple' ? 'x1' : (systemMode === 'double' ? 'x2' : 'x3');
+        const tipKeyY = systemMode === 'simple' ? 'y1' : (systemMode === 'double' ? 'y2' : 'y3');
+        const dx = cartesian[tipKeyX] - shadowCartesian[tipKeyX];
+        const dy = cartesian[tipKeyY] - shadowCartesian[tipKeyY];
+        shadowDivergence = Math.sqrt(dx * dx + dy * dy);
+      }
+
+      const payload = {
+        timestamp: simulationTime,
+        stepIndex: stepCounter,
+        mode: systemMode,
+        state: {
+          theta1: state[0],
+          theta2: state[1],
+          theta3: state[2],
+          theta1Wrapped: wrapAngle(state[0]),
+          theta2Wrapped: wrapAngle(state[1]),
+          theta3Wrapped: wrapAngle(state[2]),
+          omega1: state[3],
+          omega2: state[4],
+          omega3: state[5],
+          alpha1: currentDerivs[3],
+          alpha2: currentDerivs[4],
+          alpha3: currentDerivs[5]
+        },
+        cartesian: cartesian,
+        energy: {
+          kinetic: energy.kinetic,
+          potential: energy.potential,
+          total: energy.total,
+          initial: initialTotalEnergy,
+          energyError: energyError
+        },
+        shadow: shadowEnabled ? {
+          theta1: shadowState[0],
+          theta2: shadowState[1],
+          theta3: shadowState[2],
+          theta1Wrapped: wrapAngle(shadowState[0]),
+          theta2Wrapped: wrapAngle(shadowState[1]),
+          theta3Wrapped: wrapAngle(shadowState[2]),
+          omega1: shadowState[3],
+          omega2: shadowState[4],
+          omega3: shadowState[5],
+          cartesian: shadowCartesian,
+          divergence: shadowDivergence
+        } : null
+      };
+
+      self.postMessage({
+        type: 'STATE_UPDATE',
+        payload: payload
+      });
+    }
+
+    function startSimulationLoop() {
+      if (workerTimer) clearInterval(workerTimer);
+      isRunning = true;
+      workerTimer = setInterval(simulationTick, 16);
+    }
+
+    function pauseSimulationLoop() {
+      isRunning = false;
+      if (workerTimer) {
+        clearInterval(workerTimer);
+        workerTimer = null;
+      }
+    }
+
+    self.onmessage = function (event) {
+      const msg = event.data;
+      if (!msg || !msg.type) return;
+
+      switch (msg.type) {
+        case 'INIT':
+        case 'RESET': {
+          const cfg = msg.payload || {};
+          if (cfg.mode) systemMode = cfg.mode;
+          params.l1 = cfg.l1 !== undefined ? cfg.l1 : params.l1;
+          params.l2 = cfg.l2 !== undefined ? cfg.l2 : params.l2;
+          params.l3 = cfg.l3 !== undefined ? cfg.l3 : params.l3;
+          params.m1 = cfg.m1 !== undefined ? cfg.m1 : params.m1;
+          params.m2 = cfg.m2 !== undefined ? cfg.m2 : params.m2;
+          params.m3 = cfg.m3 !== undefined ? cfg.m3 : params.m3;
+          params.g = cfg.g !== undefined ? cfg.g : params.g;
+          params.damping = cfg.damping !== undefined ? cfg.damping : params.damping;
+
+          dt = cfg.dt !== undefined ? cfg.dt : dt;
+          subSteps = cfg.subSteps !== undefined ? cfg.subSteps : subSteps;
+          timeScale = cfg.timeScale !== undefined ? cfg.timeScale : timeScale;
+          shadowEnabled = cfg.shadowEnabled !== undefined ? cfg.shadowEnabled : shadowEnabled;
+          shadowDelta = cfg.shadowDelta !== undefined ? cfg.shadowDelta : shadowDelta;
+
+          const t1 = cfg.theta1 !== undefined ? cfg.theta1 : Math.PI / 2;
+          const t2 = cfg.theta2 !== undefined ? cfg.theta2 : Math.PI / 2;
+          const t3 = cfg.theta3 !== undefined ? cfg.theta3 : Math.PI / 2;
+          const w1 = cfg.omega1 !== undefined ? cfg.omega1 : 0.0;
+          const w2 = cfg.omega2 !== undefined ? cfg.omega2 : 0.0;
+          const w3 = cfg.omega3 !== undefined ? cfg.omega3 : 0.0;
+
+          state = [t1, t2, t3, w1, w2, w3];
+          shadowState = [t1 + shadowDelta, t2, t3, w1, w2, w3];
+          simulationTime = 0.0;
+          stepCounter = 0;
+
+          const eInit = computeEnergy(state, params, systemMode);
+          initialTotalEnergy = eInit.total;
+
+          const eShadow = computeEnergy(shadowState, params, systemMode);
+          shadowInitialEnergy = eShadow.total;
+
+          self.postMessage({
+            type: 'STATUS',
+            payload: {
+              status: isRunning ? 'RUNNING' : 'READY',
+              initialEnergy: initialTotalEnergy,
+              mode: systemMode,
+              params: { ...params },
+              state: [...state]
+            }
+          });
+
+          simulationTick();
+          break;
+        }
+
+        case 'SET_MODE': {
+          if (msg.payload && msg.payload.mode) {
+            systemMode = msg.payload.mode;
+            const eInit = computeEnergy(state, params, systemMode);
+            initialTotalEnergy = eInit.total;
+            simulationTick();
+          }
+          break;
+        }
+
+        case 'START': {
+          startSimulationLoop();
+          self.postMessage({
+            type: 'STATUS',
+            payload: { status: 'RUNNING', initialEnergy: initialTotalEnergy }
+          });
+          break;
+        }
+
+        case 'PAUSE': {
+          pauseSimulationLoop();
+          self.postMessage({
+            type: 'STATUS',
+            payload: { status: 'PAUSED', initialEnergy: initialTotalEnergy }
+          });
+          break;
+        }
+
+        case 'UPDATE_PARAMS': {
+          const p = msg.payload || {};
+          for (const key in p) {
+            if (params.hasOwnProperty(key)) {
+              params[key] = p[key];
+            }
+          }
+          if (p.mode) systemMode = p.mode;
+          if (p.timeScale !== undefined) timeScale = p.timeScale;
+          if (p.subSteps !== undefined) subSteps = p.subSteps;
+          if (p.shadowEnabled !== undefined) shadowEnabled = p.shadowEnabled;
+          if (p.shadowDelta !== undefined) shadowDelta = p.shadowDelta;
+
+          const eNow = computeEnergy(state, params, systemMode);
+          initialTotalEnergy = eNow.total;
+          break;
+        }
+
+        case 'SET_STATE': {
+          const s = msg.payload || {};
+          if (s.theta1 !== undefined) state[0] = s.theta1;
+          if (s.theta2 !== undefined) state[1] = s.theta2;
+          if (s.theta3 !== undefined) state[2] = s.theta3;
+          if (s.omega1 !== undefined) state[3] = s.omega1;
+          if (s.omega2 !== undefined) state[4] = s.omega2;
+          if (s.omega3 !== undefined) state[5] = s.omega3;
+
+          shadowState = [
+            state[0] + shadowDelta,
+            state[1],
+            state[2],
+            state[3] !== undefined ? state[3] : 0,
+            state[4] !== undefined ? state[4] : 0,
+            state[5] !== undefined ? state[5] : 0
+          ];
+
+          const eNew = computeEnergy(state, params, systemMode);
+          initialTotalEnergy = eNew.total;
+
+          simulationTick();
+          break;
+        }
+      }
+    };
+    `;
+
+    /**
+     * Fábrica de Worker en memoria con emulador de contingencia
+     */
+    function createUniversalWorker() {
+      try {
+        const blob = new Blob([PHYSICS_WORKER_CODE], { type: 'application/javascript' });
+        const blobUrl = URL.createObjectURL(blob);
+        return new Worker(blobUrl);
+      } catch (e) {
+        console.warn('Blob Worker no disponible, usando ejecutor síncrono...', e);
+      }
+
+      const emulator = {
+        onmessage: null,
+        postMessage: function(data) {
+          setTimeout(() => {
+            if (emulator._workerScope && emulator._workerScope.onmessage) {
+              emulator._workerScope.onmessage({ data: data });
+            }
+          }, 0);
+        }
+      };
+
+      const workerScope = {
+        postMessage: function(data) {
+          setTimeout(() => {
+            if (emulator.onmessage) {
+              emulator.onmessage({ data: data });
+            }
+          }, 0);
+        }
+      };
+
+      emulator._workerScope = workerScope;
+      const runCode = new Function('self', PHYSICS_WORKER_CODE);
+      runCode(workerScope);
+      return emulator;
+    }
+
+    /**
+     * ============================================================================
+     * RENDERIZADOR CANVAS 2D ADAPTATIVO (1, 2 Y 3 CUERPOS)
+     * ============================================================================
+     */
+    class PendulumRenderer {
+      constructor(canvas, options = {}) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+
+        this.options = Object.assign({
+          trailLength: 1200,
+          showRods: true,
+          showShadow: true,
+          showVectors: false,
+          showGrid: true,
+          showEnergyGlow: true,
+          scale: 160
+        }, options);
+
+        this.mode = 'double';
+        this.trailTip = [];
+        this.trailShadowTip = [];
+
+        this.isDragging = false;
+        this.dragTarget = null;
+        this.onDragStateChange = null;
+
+        this.params = { l1: 1.0, l2: 1.0, l3: 1.0, m1: 1.0, m2: 1.0, m3: 1.0 };
+        this.latestState = null;
+
+        this.setupResizeObserver();
+        this.setupInteractivity();
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+        this.clearTrails();
+        if (this.resize) this.resize();
+      }
+
+      setupResizeObserver() {
+        const resize = () => {
+          const rect = this.canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          this.width = rect.width;
+          this.height = rect.height;
+          this.canvas.width = Math.floor(rect.width * dpr);
+          this.canvas.height = Math.floor(rect.height * dpr);
+          this.ctx.resetTransform();
+          this.ctx.scale(dpr, dpr);
+
+          this.originX = this.width * 0.5;
+          this.originY = this.height * (this.mode === 'triple' ? 0.32 : 0.38);
+
+          let maxL = this.params.l1;
+          if (this.mode === 'double') maxL = this.params.l1 + this.params.l2;
+          if (this.mode === 'triple') maxL = this.params.l1 + this.params.l2 + this.params.l3;
+          maxL = maxL || 2.0;
+
+          this.options.scale = Math.min(this.width, this.height) / (maxL * 2.35);
+        };
+
+        window.addEventListener('resize', resize);
+        setTimeout(resize, 50);
+        this.resize = resize;
+      }
+
+      clearTrails() {
+        this.trailTip = [];
+        this.trailShadowTip = [];
+      }
+
+      updateData(statePayload, physicalParams) {
+        this.latestState = statePayload;
+        if (physicalParams) this.params = physicalParams;
+        if (!statePayload) return;
+
+        const { cartesian, shadow, energy, mode } = statePayload;
+        if (mode) this.mode = mode;
+
+        if (cartesian) {
+          const tipX = this.mode === 'simple' ? cartesian.x1 : (this.mode === 'double' ? cartesian.x2 : cartesian.x3);
+          const tipY = this.mode === 'simple' ? cartesian.y1 : (this.mode === 'double' ? cartesian.y2 : cartesian.y3);
+
+          this.trailTip.push({
+            x: tipX,
+            y: tipY,
+            kinetic: energy ? energy.kinetic : 1.0,
+            time: statePayload.timestamp
+          });
+          if (this.trailTip.length > this.options.trailLength) {
+            this.trailTip.shift();
+          }
+        }
+
+        if (shadow && shadow.cartesian) {
+          const sTipX = this.mode === 'simple' ? shadow.cartesian.x1 : (this.mode === 'double' ? shadow.cartesian.x2 : shadow.cartesian.x3);
+          const sTipY = this.mode === 'simple' ? shadow.cartesian.y1 : (this.mode === 'double' ? shadow.cartesian.y2 : shadow.cartesian.y3);
+
+          this.trailShadowTip.push({
+            x: sTipX,
+            y: sTipY
+          });
+          if (this.trailShadowTip.length > this.options.trailLength) {
+            this.trailShadowTip.shift();
+          }
+        }
+      }
+
+      render() {
+        const ctx = this.ctx;
+        const w = this.width;
+        const h = this.height;
+        const ox = this.originX;
+        const oy = this.originY;
+        const scale = this.options.scale;
+
+        if (!w || !h) return;
+
+        const bgGrad = ctx.createRadialGradient(ox, oy, 10, ox, oy, Math.max(w, h));
+        bgGrad.addColorStop(0, '#0d131f');
+        bgGrad.addColorStop(1, '#05070c');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        if (this.options.showGrid) this.drawGrid(ctx, ox, oy, scale);
+        if (this.options.showShadow && this.trailShadowTip.length > 1) this.drawShadowTrail(ctx, ox, oy, scale);
+        if (this.trailTip.length > 1) this.drawPrimaryTrail(ctx, ox, oy, scale);
+        if (this.options.showShadow && this.latestState && this.latestState.shadow) {
+          this.drawShadowPendulum(ctx, ox, oy, scale, this.latestState.shadow);
+        }
+
+        if (this.latestState) {
+          this.drawPrimaryPendulum(ctx, ox, oy, scale, this.latestState);
+        } else {
+          this.drawPivot(ctx, ox, oy);
+        }
+      }
+
+      drawGrid(ctx, ox, oy, scale) {
+        ctx.save();
+        ctx.lineWidth = 1;
+
+        let maxR = this.params.l1;
+        if (this.mode === 'double') maxR += this.params.l2;
+        if (this.mode === 'triple') maxR += this.params.l2 + this.params.l3;
+        maxR *= 1.25;
+
+        for (let r = 0.5; r <= maxR; r += 0.5) {
+          ctx.beginPath();
+          ctx.arc(ox, oy, r * scale, 0, Math.PI * 2);
+          ctx.strokeStyle = r % 1 === 0 ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.03)';
+          ctx.stroke();
+
+          if (r % 1 === 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.font = '10px "JetBrains Mono", monospace';
+            ctx.fillText(`${r}m`, ox + r * scale + 4, oy - 4);
+          }
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(ox, 0);
+        ctx.lineTo(ox, this.height);
+        ctx.moveTo(0, oy);
+        ctx.lineTo(this.width, oy);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      drawShadowTrail(ctx, ox, oy, scale) {
+        ctx.save();
+        const trail = this.trailShadowTip;
+        const len = trail.length;
+
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for (let i = 1; i < len; i++) {
+          const alpha = (i / len) * 0.4;
+          ctx.beginPath();
+          ctx.moveTo(ox + trail[i - 1].x * scale, oy - trail[i - 1].y * scale);
+          ctx.lineTo(ox + trail[i].x * scale, oy - trail[i].y * scale);
+          ctx.strokeStyle = `rgba(255, 0, 127, ${alpha})`;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      drawPrimaryTrail(ctx, ox, oy, scale) {
+        ctx.save();
+        const trail = this.trailTip;
+        const len = trail.length;
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalCompositeOperation = 'lighter';
+
+        const strokeCol = this.mode === 'simple' ? '16, 185, 129' : (this.mode === 'double' ? '0, 240, 255' : '255, 0, 127');
+
+        for (let i = 1; i < len; i += 2) {
+          const prev = trail[i - 1];
+          const curr = trail[i];
+          const factor = i / len;
+          const alpha = Math.pow(factor, 1.8) * 0.85;
+
+          const px1 = ox + prev.x * scale;
+          const py1 = oy - prev.y * scale;
+          const px2 = ox + curr.x * scale;
+          const py2 = oy - curr.y * scale;
+
+          ctx.beginPath();
+          ctx.moveTo(px1, py1);
+          ctx.lineTo(px2, py2);
+          ctx.lineWidth = 1.2 + factor * 2.2;
+          ctx.strokeStyle = `rgba(${strokeCol}, ${alpha})`;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      drawShadowPendulum(ctx, ox, oy, scale, shadow) {
+        const c = shadow.cartesian;
+        if (!c) return;
+
+        const p1x = ox + c.x1 * scale;
+        const p1y = oy - c.y1 * scale;
+        const p2x = ox + c.x2 * scale;
+        const p2y = oy - c.y2 * scale;
+        const p3x = ox + c.x3 * scale;
+        const p3y = oy - c.y3 * scale;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 0, 127, 0.35)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(p1x, p1y);
+        if (this.mode === 'double' || this.mode === 'triple') ctx.lineTo(p2x, p2y);
+        if (this.mode === 'triple') ctx.lineTo(p3x, p3y);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255, 0, 127, 0.4)';
+        ctx.beginPath();
+        ctx.arc(p1x, p1y, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (this.mode === 'double' || this.mode === 'triple') {
+          ctx.beginPath();
+          ctx.arc(p2x, p2y, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (this.mode === 'triple') {
+          ctx.fillStyle = 'rgba(255, 0, 127, 0.6)';
+          ctx.beginPath();
+          ctx.arc(p3x, p3y, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (shadow.divergence > 0.05 && this.latestState && this.latestState.cartesian) {
+          const realTipX = this.mode === 'simple' ? this.latestState.cartesian.x1 : (this.mode === 'double' ? this.latestState.cartesian.x2 : this.latestState.cartesian.x3);
+          const realTipY = this.mode === 'simple' ? this.latestState.cartesian.y1 : (this.mode === 'double' ? this.latestState.cartesian.y2 : this.latestState.cartesian.y3);
+          const sTipX = this.mode === 'simple' ? c.x1 : (this.mode === 'double' ? c.x2 : c.x3);
+          const sTipY = this.mode === 'simple' ? c.y1 : (this.mode === 'double' ? c.y2 : c.y3);
+
+          ctx.beginPath();
+          ctx.moveTo(ox + realTipX * scale, oy - realTipY * scale);
+          ctx.lineTo(ox + sTipX * scale, oy - realTipY * scale);
+          ctx.strokeStyle = 'rgba(255, 255, 0, 0.4)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      drawPrimaryPendulum(ctx, ox, oy, scale, statePayload) {
+        const { cartesian, state } = statePayload;
+        const { m1, m2, m3, l1, l2, l3 } = this.params;
+
+        const p1x = ox + cartesian.x1 * scale;
+        const p1y = oy - cartesian.y1 * scale;
+        const p2x = ox + cartesian.x2 * scale;
+        const p2y = oy - cartesian.y2 * scale;
+        const p3x = ox + cartesian.x3 * scale;
+        const p3y = oy - cartesian.y3 * scale;
+
+        const r1 = Math.max(8, Math.min(22, 10 * Math.cbrt(m1)));
+        const r2 = Math.max(8, Math.min(24, 11 * Math.cbrt(m2)));
+        const r3 = Math.max(8, Math.min(26, 12 * Math.cbrt(m3)));
+
+        ctx.save();
+
+        if (this.options.showRods) {
+          // Rod 1
+          const rod1Grad = ctx.createLinearGradient(ox, oy, p1x, p1y);
+          rod1Grad.addColorStop(0, '#94a3b8');
+          rod1Grad.addColorStop(1, '#10b981');
+
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(p1x, p1y);
+          ctx.strokeStyle = rod1Grad;
+          ctx.lineWidth = 4.5;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          // Rod 2
+          if (this.mode === 'double' || this.mode === 'triple') {
+            const rod2Grad = ctx.createLinearGradient(p1x, p1y, p2x, p2y);
+            rod2Grad.addColorStop(0, '#10b981');
+            rod2Grad.addColorStop(1, '#00f0ff');
+
+            ctx.beginPath();
+            ctx.moveTo(p1x, p1y);
+            ctx.lineTo(p2x, p2y);
+            ctx.strokeStyle = rod2Grad;
+            ctx.lineWidth = 4.0;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+          }
+
+          // Rod 3
+          if (this.mode === 'triple') {
+            const rod3Grad = ctx.createLinearGradient(p2x, p2y, p3x, p3y);
+            rod3Grad.addColorStop(0, '#00f0ff');
+            rod3Grad.addColorStop(1, '#ff007f');
+
+            ctx.beginPath();
+            ctx.moveTo(p2x, p2y);
+            ctx.lineTo(p3x, p3y);
+            ctx.strokeStyle = rod3Grad;
+            ctx.lineWidth = 3.5;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+          }
+        }
+
+        if (this.options.showVectors) {
+          const vScale = 0.05 * scale;
+          const v1x = -l1 * state.omega1 * Math.cos(state.theta1);
+          const v1y = l1 * state.omega1 * Math.sin(state.theta1);
+          this.drawArrow(ctx, p1x, p1y, p1x + v1x * vScale, p1y - v1y * vScale, '#39ff14');
+
+          if (this.mode === 'double' || this.mode === 'triple') {
+            const v2x = v1x - l2 * state.omega2 * Math.cos(state.theta2);
+            const v2y = v1y + l2 * state.omega2 * Math.sin(state.theta2);
+            this.drawArrow(ctx, p2x, p2y, p2x + v2x * vScale, p2y - v2y * vScale, '#00f0ff');
+
+            if (this.mode === 'triple') {
+              const v3x = v2x - l3 * state.omega3 * Math.cos(state.theta3);
+              const v3y = v2y + l3 * state.omega3 * Math.sin(state.theta3);
+              this.drawArrow(ctx, p3x, p3y, p3x + v3x * vScale, p3y - v3y * vScale, '#ff007f');
+            }
+          }
+        }
+
+        if (this.options.showEnergyGlow) {
+          ctx.globalCompositeOperation = 'lighter';
+
+          // Glow Bob 1
+          const g1 = ctx.createRadialGradient(p1x, p1y, 2, p1x, p1y, r1 * 2.8);
+          g1.addColorStop(0, 'rgba(57, 255, 20, 0.7)');
+          g1.addColorStop(0.5, 'rgba(57, 255, 20, 0.2)');
+          g1.addColorStop(1, 'rgba(57, 255, 20, 0)');
+          ctx.fillStyle = g1;
+          ctx.beginPath();
+          ctx.arc(p1x, p1y, r1 * 2.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (this.mode === 'double' || this.mode === 'triple') {
+            // Glow Bob 2
+            const g2 = ctx.createRadialGradient(p2x, p2y, 2, p2x, p2y, r2 * 3.0);
+            g2.addColorStop(0, 'rgba(0, 240, 255, 0.8)');
+            g2.addColorStop(0.5, 'rgba(0, 240, 255, 0.2)');
+            g2.addColorStop(1, 'rgba(0, 240, 255, 0)');
+            ctx.fillStyle = g2;
+            ctx.beginPath();
+            ctx.arc(p2x, p2y, r2 * 3.0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          if (this.mode === 'triple') {
+            // Glow Bob 3
+            const g3 = ctx.createRadialGradient(p3x, p3y, 2, p3x, p3y, r3 * 3.4);
+            g3.addColorStop(0, 'rgba(255, 0, 127, 0.85)');
+            g3.addColorStop(0.5, 'rgba(255, 0, 127, 0.25)');
+            g3.addColorStop(1, 'rgba(255, 0, 127, 0)');
+            ctx.fillStyle = g3;
+            ctx.beginPath();
+            ctx.arc(p3x, p3y, r3 * 3.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.globalCompositeOperation = 'source-over';
+        }
+
+        this.drawPivot(ctx, ox, oy);
+
+        // Bob 1
+        const bob1Grad = ctx.createRadialGradient(p1x - r1 * 0.3, p1y - r1 * 0.3, 1, p1x, p1y, r1);
+        bob1Grad.addColorStop(0, '#a3e635');
+        bob1Grad.addColorStop(0.6, '#4ade80');
+        bob1Grad.addColorStop(1, '#059669');
+
+        ctx.beginPath();
+        ctx.arc(p1x, p1y, r1, 0, Math.PI * 2);
+        ctx.fillStyle = bob1Grad;
+        ctx.fill();
+        ctx.strokeStyle = '#ecfccb';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.font = '11px "JetBrains Mono", monospace';
+        ctx.fillText(`m₁: ${m1.toFixed(1)}kg`, p1x + r1 + 6, p1y + 4);
+
+        // Bob 2
+        if (this.mode === 'double' || this.mode === 'triple') {
+          const bob2Grad = ctx.createRadialGradient(p2x - r2 * 0.3, p2y - r2 * 0.3, 1, p2x, p2y, r2);
+          bob2Grad.addColorStop(0, '#e0f2fe');
+          bob2Grad.addColorStop(0.4, '#38bdf8');
+          bob2Grad.addColorStop(1, '#0284c7');
+
+          ctx.beginPath();
+          ctx.arc(p2x, p2y, r2, 0, Math.PI * 2);
+          ctx.fillStyle = bob2Grad;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          ctx.fillText(`m₂: ${m2.toFixed(1)}kg`, p2x + r2 + 6, p2y + 4);
+        }
+
+        // Bob 3
+        if (this.mode === 'triple') {
+          const bob3Grad = ctx.createRadialGradient(p3x - r3 * 0.3, p3y - r3 * 0.3, 1, p3x, p3y, r3);
+          bob3Grad.addColorStop(0, '#fce7f3');
+          bob3Grad.addColorStop(0.4, '#f472b6');
+          bob3Grad.addColorStop(1, '#be185d');
+
+          ctx.beginPath();
+          ctx.arc(p3x, p3y, r3, 0, Math.PI * 2);
+          ctx.fillStyle = bob3Grad;
+          ctx.fill();
+          ctx.strokeStyle = '#ff007f';
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(p3x, p3y, r3 + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 0, 127, 0.5)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.fillText(`m₃: ${m3.toFixed(1)}kg`, p3x + r3 + 6, p3y + 4);
+        }
+
+        ctx.restore();
+      }
+
+      drawPivot(ctx, ox, oy) {
+        ctx.save();
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.moveTo(ox - 18, oy - 14);
+        ctx.lineTo(ox + 18, oy - 14);
+        ctx.lineTo(ox, oy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        const pGrad = ctx.createRadialGradient(ox - 2, oy - 2, 1, ox, oy, 7);
+        pGrad.addColorStop(0, '#f8fafc');
+        pGrad.addColorStop(0.7, '#64748b');
+        pGrad.addColorStop(1, '#334155');
+
+        ctx.beginPath();
+        ctx.arc(ox, oy, 6.5, 0, Math.PI * 2);
+        ctx.fillStyle = pGrad;
+        ctx.fill();
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      drawArrow(ctx, fromX, fromY, toX, toY, color) {
+        const headLen = 8;
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+        const angle = Math.atan2(dy, dx);
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      setupInteractivity() {
+        const getPos = (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+          return { x: clientX - rect.left, y: clientY - rect.top };
+        };
+
+        const startDrag = (e) => {
+          if (!this.latestState || !this.latestState.cartesian) return;
+          const pos = getPos(e);
+          const scale = this.options.scale;
+          const ox = this.originX;
+          const oy = this.originY;
+
+          const p1x = ox + this.latestState.cartesian.x1 * scale;
+          const p1y = oy - this.latestState.cartesian.y1 * scale;
+          const p2x = ox + this.latestState.cartesian.x2 * scale;
+          const p2y = oy - this.latestState.cartesian.y2 * scale;
+          const p3x = ox + this.latestState.cartesian.x3 * scale;
+          const p3y = oy - this.latestState.cartesian.y3 * scale;
+
+          const d1 = Math.hypot(pos.x - p1x, pos.y - p1y);
+          const d2 = Math.hypot(pos.x - p2x, pos.y - p2y);
+          const d3 = Math.hypot(pos.x - p3x, pos.y - p3y);
+
+          const hitRadius = 32;
+          if (this.mode === 'triple' && d3 < hitRadius) {
+            this.isDragging = true;
+            this.dragTarget = 'bob3';
+            this.canvas.style.cursor = 'grabbing';
+          } else if ((this.mode === 'double' || this.mode === 'triple') && d2 < hitRadius) {
+            this.isDragging = true;
+            this.dragTarget = 'bob2';
+            this.canvas.style.cursor = 'grabbing';
+          } else if (d1 < hitRadius) {
+            this.isDragging = true;
+            this.dragTarget = 'bob1';
+            this.canvas.style.cursor = 'grabbing';
+          }
+        };
+
+        const dragMove = (e) => {
+          if (!this.isDragging || !this.latestState) {
+            if (this.latestState && this.latestState.cartesian) {
+              const pos = getPos(e);
+              const scale = this.options.scale;
+              const p1x = this.originX + this.latestState.cartesian.x1 * scale;
+              const p1y = this.originY - this.latestState.cartesian.y1 * scale;
+              const p2x = this.originX + this.latestState.cartesian.x2 * scale;
+              const p2y = this.originY - this.latestState.cartesian.y2 * scale;
+              const p3x = this.originX + this.latestState.cartesian.x3 * scale;
+              const p3y = this.originY - this.latestState.cartesian.y3 * scale;
+
+              const d1 = Math.hypot(pos.x - p1x, pos.y - p1y);
+              const d2 = Math.hypot(pos.x - p2x, pos.y - p2y);
+              const d3 = Math.hypot(pos.x - p3x, pos.y - p3y);
+
+              const isNear = d1 < 25 || 
+                ((this.mode === 'double' || this.mode === 'triple') && d2 < 25) ||
+                (this.mode === 'triple' && d3 < 25);
+
+              this.canvas.style.cursor = isNear ? 'grab' : 'crosshair';
+            }
+            return;
+          }
+
+          e.preventDefault();
+          const pos = getPos(e);
+          const scale = this.options.scale;
+          const ox = this.originX;
+          const oy = this.originY;
+
+          const mx = (pos.x - ox) / scale;
+          const my = -(pos.y - oy) / scale;
+
+          let newTheta1 = this.latestState.state.theta1;
+          let newTheta2 = this.latestState.state.theta2;
+          let newTheta3 = this.latestState.state.theta3;
+
+          if (this.dragTarget === 'bob1') {
+            newTheta1 = Math.atan2(mx, -my);
+          } else if (this.dragTarget === 'bob2') {
+            const x1 = this.params.l1 * Math.sin(newTheta1);
+            const y1 = -this.params.l1 * Math.cos(newTheta1);
+            const dx2 = mx - x1;
+            const dy2 = my - y1;
+            newTheta2 = Math.atan2(dx2, -dy2);
+          } else if (this.dragTarget === 'bob3') {
+            const x1 = this.params.l1 * Math.sin(newTheta1);
+            const y1 = -this.params.l1 * Math.cos(newTheta1);
+            const x2 = x1 + this.params.l2 * Math.sin(newTheta2);
+            const y2 = y1 - this.params.l2 * Math.cos(newTheta2);
+            const dx3 = mx - x2;
+            const dy3 = my - y2;
+            newTheta3 = Math.atan2(dx3, -dy3);
+          }
+
+          if (this.onDragStateChange) {
+            this.onDragStateChange({
+              theta1: newTheta1,
+              theta2: newTheta2,
+              theta3: newTheta3,
+              omega1: 0,
+              omega2: 0,
+              omega3: 0
+            });
+          }
+        };
+
+        const endDrag = () => {
+          if (this.isDragging) {
+            this.isDragging = false;
+            this.dragTarget = null;
+            this.canvas.style.cursor = 'crosshair';
+          }
+        };
+
+        this.canvas.addEventListener('mousedown', startDrag);
+        window.addEventListener('mousemove', dragMove);
+        window.addEventListener('mouseup', endDrag);
+
+        this.canvas.addEventListener('touchstart', startDrag, { passive: false });
+        window.addEventListener('touchmove', dragMove, { passive: false });
+        window.addEventListener('touchend', endDrag);
+      }
+    }
+
+    /**
+     * ============================================================================
+     * TELEMETRÍA: ESPACIO DE FASES, ECUACIONES ACTIVAS Y OSCILOSCOPIO RK4
+     * ============================================================================
+     */
+    class TelemetryModule {
+      constructor(phaseCanvas, energyCanvas, equationsContainer) {
+        this.phaseCanvas = phaseCanvas;
+        this.phaseCtx = phaseCanvas ? phaseCanvas.getContext('2d') : null;
+
+        this.energyCanvas = energyCanvas;
+        this.energyCtx = energyCanvas ? energyCanvas.getContext('2d') : null;
+
+        this.equationsContainer = equationsContainer;
+
+        this.mode = 'double';
+        this.phaseBuffer1 = [];
+        this.phaseBuffer2 = [];
+        this.phaseBuffer3 = [];
+        this.energyHistory = [];
+
+        this.maxPhasePoints = 1800;
+        this.maxEnergyPoints = 300;
+
+        this.phaseMode = 'all';
+        this.maxOmega = 15.0;
+
+        this.setupCanvases();
+        this.renderEquations();
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+        this.clear();
+        this.updatePhaseSelectorOptions();
+        this.renderEquations();
+        if (this.onResize) this.onResize();
+      }
+
+      updatePhaseSelectorOptions() {
+        const select = document.getElementById('selectPhaseMode');
+        if (!select) return;
+
+        select.innerHTML = '';
+        if (this.mode === 'simple') {
+          select.innerHTML = '<option value="bob1">Brazo 1 (θ₁ vs ω₁)</option>';
+          this.phaseMode = 'bob1';
+        } else if (this.mode === 'double') {
+          select.innerHTML = `
+            <option value="all">Ambos (θ₁, θ₂)</option>
+            <option value="bob1">Solo Brazo 1 (θ₁)</option>
+            <option value="bob2">Solo Brazo 2 (θ₂)</option>
+          `;
+          this.phaseMode = 'all';
+        } else if (this.mode === 'triple') {
+          select.innerHTML = `
+            <option value="all">Todos (θ₁, θ₂, θ₃)</option>
+            <option value="bob1">Solo Brazo 1 (θ₁)</option>
+            <option value="bob2">Solo Brazo 2 (θ₂)</option>
+            <option value="bob3">Solo Brazo 3 (θ₃)</option>
+          `;
+          this.phaseMode = 'all';
+        }
+      }
+
+      renderEquations() {
+        if (!this.equationsContainer) return;
+
+        let html = '';
+        if (this.mode === 'simple') {
+          html = `
+            <div class="eq-row">
+              <div class="eq-label">Ecuación Diferencial No Lineal (Euler-Lagrange):</div>
+              <div class="eq-math" id="math-eq1">\\ddot{\\theta}_1 = -\\frac{g}{l_1}\\sin\\theta_1 - \\frac{b}{m_1 l_1^2}\\dot{\\theta}_1</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Sistema RK4 de 1er Orden:</div>
+              <div class="eq-math" id="math-eq2">\\frac{d\\theta_1}{dt} = \\omega_1, \\quad \\frac{d\\omega_1}{dt} = -\\frac{g}{l_1}\\sin\\theta_1 - \\frac{b}{m_1 l_1^2}\\omega_1</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Lagrangiano L = T - V:</div>
+              <div class="eq-math" id="math-eq3">L = \\frac{1}{2}m_1 l_1^2 \\dot{\\theta}_1^2 + m_1 g l_1 \\cos\\theta_1</div>
+            </div>
+          `;
+        } else if (this.mode === 'double') {
+          html = `
+            <div class="eq-row">
+              <div class="eq-label">Sistema Matricial Lagrangiano:</div>
+              <div class="eq-math" id="math-eq1">\\mathbf{M}(\\boldsymbol{\\theta}) \\begin{pmatrix} \\ddot{\\theta}_1 \\\\ \\ddot{\\theta}_2 \\end{pmatrix} = \\begin{pmatrix} F_1 \\\\ F_2 \\end{pmatrix}</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Matriz de Inercia y Acoplamiento \\mathbf{M}:</div>
+              <div class="eq-math" id="math-eq2">\\mathbf{M} = \\begin{pmatrix} (m_1+m_2)l_1^2 & m_2 l_1 l_2 \\cos(\\theta_1-\\theta_2) \\\\ m_2 l_1 l_2 \\cos(\\theta_1-\\theta_2) & m_2 l_2^2 \\end{pmatrix}</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Fuerzas Centrífugas, Gravitatorias y Disipativas:</div>
+              <div class="eq-math" id="math-eq3">\\begin{cases} F_1 = -m_2 l_1 l_2 \\dot{\\theta}_2^2 \\sin(\\Delta\\theta) - (m_1+m_2)gl_1\\sin\\theta_1 - b\\dot{\\theta}_1 \\\\ F_2 = m_2 l_1 l_2 \\dot{\\theta}_1^2 \\sin(\\Delta\\theta) - m_2 gl_2\\sin\\theta_2 - b\\dot{\\theta}_2 \\end{cases}</div>
+            </div>
+          `;
+        } else if (this.mode === 'triple') {
+          html = `
+            <div class="eq-row">
+              <div class="eq-label">Tensor de Inercia Lagrangiano 3x3:</div>
+              <div class="eq-math" id="math-eq1">\\mathbf{M}(\\boldsymbol{\\theta}) \\ddot{\\boldsymbol{\\theta}} = \\mathbf{F}(\\boldsymbol{\\theta}, \\dot{\\boldsymbol{\\theta}}), \\quad M_{ij} = \\left(\\sum_{k=\\max(i,j)}^3 m_k\\right) l_i l_j \\cos(\\theta_i - \\theta_j)</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Fuerzas Generalizadas F_i (i = 1, 2, 3):</div>
+              <div class="eq-math" id="math-eq2">F_i = -\\sum_{j=1}^3 \\mu_{ij} l_i l_j \\omega_j^2 \\sin(\\theta_i - \\theta_j) - \\mu_{ii} g l_i \\sin\\theta_i - b \\omega_i</div>
+            </div>
+            <div class="eq-row">
+              <div class="eq-label">Resolución Numérica RK4:</div>
+              <div class="eq-math" id="math-eq3">\\vec{\\alpha} = \\mathbf{M}^{-1} \\mathbf{F}, \\quad \\frac{d\\vec{Y}}{dt} = [\\omega_1, \\omega_2, \\omega_3, \\alpha_1, \\alpha_2, \\alpha_3]^T</div>
+            </div>
+          `;
+        }
+
+        this.equationsContainer.innerHTML = html;
+
+        // Renderizado KaTeX si está cargado
+        if (window.katex) {
+          try {
+            ['math-eq1', 'math-eq2', 'math-eq3'].forEach(id => {
+              const el = document.getElementById(id);
+              if (el) {
+                const tex = el.textContent;
+                katex.render(tex, el, { displayMode: true, throwOnError: false });
+              }
+            });
+          } catch (e) {
+            console.warn('KaTeX render error:', e);
+          }
+        }
+      }
+
+      setupCanvases() {
+        const resizeCanvas = (canvas, ctx) => {
+          if (!canvas || !ctx) return;
+          const rect = canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(rect.width * dpr);
+          canvas.height = Math.floor(rect.height * dpr);
+          ctx.resetTransform();
+          ctx.scale(dpr, dpr);
+        };
+
+        const onResize = () => {
+          if (this.phaseCanvas) resizeCanvas(this.phaseCanvas, this.phaseCtx);
+          if (this.energyCanvas) resizeCanvas(this.energyCanvas, this.energyCtx);
+        };
+
+        window.addEventListener('resize', onResize);
+        setTimeout(onResize, 50);
+        this.onResize = onResize;
+      }
+
+      clear() {
+        this.phaseBuffer1 = [];
+        this.phaseBuffer2 = [];
+        this.phaseBuffer3 = [];
+        this.energyHistory = [];
+      }
+
+      setPhaseMode(mode) {
+        this.phaseMode = mode;
+      }
+
+      pushData(statePayload) {
+        if (!statePayload) return;
+
+        const { state, energy, timestamp } = statePayload;
+
+        this.phaseBuffer1.push({ theta: state.theta1Wrapped, omega: state.omega1 });
+        if (this.phaseBuffer1.length > this.maxPhasePoints) this.phaseBuffer1.shift();
+
+        if (this.mode === 'double' || this.mode === 'triple') {
+          this.phaseBuffer2.push({ theta: state.theta2Wrapped, omega: state.omega2 });
+          if (this.phaseBuffer2.length > this.maxPhasePoints) this.phaseBuffer2.shift();
+        }
+
+        if (this.mode === 'triple') {
+          this.phaseBuffer3.push({ theta: state.theta3Wrapped, omega: state.omega3 });
+          if (this.phaseBuffer3.length > this.maxPhasePoints) this.phaseBuffer3.shift();
+        }
+
+        let currentMaxW = Math.abs(state.omega1);
+        if (this.mode === 'double' || this.mode === 'triple') currentMaxW = Math.max(currentMaxW, Math.abs(state.omega2));
+        if (this.mode === 'triple') currentMaxW = Math.max(currentMaxW, Math.abs(state.omega3));
+
+        if (currentMaxW > this.maxOmega * 0.9) {
+          this.maxOmega = Math.max(this.maxOmega, currentMaxW * 1.25);
+        }
+
+        if (energy) {
+          this.energyHistory.push({
+            time: timestamp,
+            kinetic: energy.kinetic,
+            potential: energy.potential,
+            total: energy.total,
+            initial: energy.initial,
+            error: energy.energyError
+          });
+          if (this.energyHistory.length > this.maxEnergyPoints) {
+            this.energyHistory.shift();
+          }
+        }
+      }
+
+      render() {
+        this.renderPhaseSpace();
+        this.renderEnergyOscilloscope();
+      }
+
+      renderPhaseSpace() {
+        if (!this.phaseCanvas || !this.phaseCtx) return;
+        const canvas = this.phaseCanvas;
+        const ctx = this.phaseCtx;
+        const rect = canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        if (!w || !h) return;
+
+        ctx.fillStyle = '#080c14';
+        ctx.fillRect(0, 0, w, h);
+
+        const ox = w * 0.5;
+        const oy = h * 0.5;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(0, oy);
+        ctx.lineTo(w, oy);
+        ctx.moveTo(ox, 0);
+        ctx.lineTo(ox, h);
+        ctx.stroke();
+
+        const xStep = (w * 0.5) / Math.PI;
+        const guideThetas = [-Math.PI, -Math.PI / 2, Math.PI / 2, Math.PI];
+        const guideLabels = ['-π', '-π/2', 'π/2', 'π'];
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.font = '9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+
+        guideThetas.forEach((th, idx) => {
+          const gx = ox + th * xStep;
+          ctx.beginPath();
+          ctx.setLineDash([2, 4]);
+          ctx.moveTo(gx, 0);
+          ctx.lineTo(gx, h);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+          ctx.stroke();
+          ctx.fillText(guideLabels[idx], gx, h - 4);
+        });
+
+        ctx.setLineDash([]);
+        ctx.textAlign = 'left';
+        ctx.fillText(`+${this.maxOmega.toFixed(1)} rad/s`, 4, 12);
+        ctx.fillText(`-${this.maxOmega.toFixed(1)} rad/s`, 4, h - 4);
+
+        const mapPoint = (th, wVal) => {
+          const px = ox + th * xStep;
+          const py = oy - (wVal / this.maxOmega) * (h * 0.45);
+          return { px, py };
+        };
+
+        const drawPhaseTrace = (buffer, color, alphaBase) => {
+          const len = buffer.length;
+          if (len < 2) return;
+
+          ctx.lineWidth = 1.2;
+          ctx.lineCap = 'round';
+
+          for (let i = 1; i < len; i++) {
+            const p1 = buffer[i - 1];
+            const p2 = buffer[i];
+
+            if (Math.abs(p1.theta - p2.theta) > Math.PI) continue;
+
+            const { px: x1, py: y1 } = mapPoint(p1.theta, p1.omega);
+            const { px: x2, py: y2 } = mapPoint(p2.theta, p2.omega);
+
+            const age = i / len;
+            ctx.strokeStyle = `${color}${Math.floor(age * alphaBase * 255).toString(16).padStart(2, '0')}`;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+          }
+
+          const last = buffer[len - 1];
+          const { px, py } = mapPoint(last.theta, last.omega);
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fill();
+        };
+
+        const show1 = this.phaseMode === 'all' || this.phaseMode === 'bob1';
+        const show2 = (this.mode === 'double' || this.mode === 'triple') && (this.phaseMode === 'all' || this.phaseMode === 'bob2');
+        const show3 = this.mode === 'triple' && (this.phaseMode === 'all' || this.phaseMode === 'bob3');
+
+        if (show1) drawPhaseTrace(this.phaseBuffer1, '#39ff14', 0.85);
+        if (show2) drawPhaseTrace(this.phaseBuffer2, '#00f0ff', 0.9);
+        if (show3) drawPhaseTrace(this.phaseBuffer3, '#ff007f', 0.95);
+
+        ctx.textAlign = 'right';
+        ctx.font = '10px "JetBrains Mono", monospace';
+        let legendY = 14;
+
+        if (show1) {
+          ctx.fillStyle = '#39ff14';
+          ctx.fillText('● (θ₁, ω₁)', w - 8, legendY);
+          legendY += 14;
+        }
+        if (show2) {
+          ctx.fillStyle = '#00f0ff';
+          ctx.fillText('● (θ₂, ω₂)', w - 8, legendY);
+          legendY += 14;
+        }
+        if (show3) {
+          ctx.fillStyle = '#ff007f';
+          ctx.fillText('● (θ₃, ω₃)', w - 8, legendY);
+        }
+
+        ctx.restore();
+      }
+
+      renderEnergyOscilloscope() {
+        if (!this.energyCanvas || !this.energyCtx) return;
+        const canvas = this.energyCanvas;
+        const ctx = this.energyCtx;
+        const rect = canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        if (!w || !h) return;
+
+        ctx.fillStyle = '#080c14';
+        ctx.fillRect(0, 0, w, h);
+
+        const hist = this.energyHistory;
+        const len = hist.length;
+        if (len < 2) return;
+
+        ctx.save();
+
+        let minE = Infinity;
+        let maxE = -Infinity;
+        hist.forEach(e => {
+          minE = Math.min(minE, e.kinetic, e.potential, e.total, e.initial);
+          maxE = Math.max(maxE, e.kinetic, e.potential, e.total, e.initial);
+        });
+
+        const padding = (maxE - minE) * 0.15 || 5.0;
+        const yMin = minE - padding;
+        const yMax = maxE + padding;
+        const yRange = yMax - yMin;
+
+        const mapY = (val) => h - ((val - yMin) / yRange) * (h - 24) - 12;
+
+        if (0 >= yMin && 0 <= yMax) {
+          const zeroY = mapY(0);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(0, zeroY);
+          ctx.lineTo(w, zeroY);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.font = '9px "JetBrains Mono", monospace';
+          ctx.fillText('0 J', 4, zeroY - 2);
+        }
+
+        const initialE = hist[0].initial;
+        const initialY = mapY(initialE);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, initialY);
+        ctx.lineTo(w, initialY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const drawSeries = (extractor, color, lineWidth) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = lineWidth;
+          ctx.beginPath();
+
+          for (let i = 0; i < len; i++) {
+            const x = (i / (this.maxEnergyPoints - 1)) * w;
+            const val = extractor(hist[i]);
+            const y = mapY(val);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        };
+
+        drawSeries(e => e.potential, '#c084fc', 1.2);
+        drawSeries(e => e.kinetic, '#fbbf24', 1.2);
+        drawSeries(e => e.total, '#10b981', 2.0);
+
+        const latest = hist[len - 1];
+        ctx.font = '10px "JetBrains Mono", monospace';
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillText(`T (Cinética): ${latest.kinetic.toFixed(2)} J`, 8, 14);
+
+        ctx.fillStyle = '#c084fc';
+        ctx.fillText(`V (Potencial): ${latest.potential.toFixed(2)} J`, 8, 28);
+
+        ctx.fillStyle = '#10b981';
+        ctx.fillText(`E (Total): ${latest.total.toFixed(3)} J`, 8, 42);
+
+        const errPercent = latest.error * 100;
+        const precisionText = latest.error < 1e-4 
+          ? `ΔE/E₀: ${(latest.error).toExponential(2)} (RK4 OK)`
+          : `ΔE/E₀: ${errPercent.toFixed(4)}%`;
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = latest.error < 1e-3 ? '#34d399' : '#f87171';
+        ctx.fillText(precisionText, w - 8, 14);
+
+        ctx.restore();
+      }
+    }
+
+    /**
+     * ============================================================================
+     * SONIFICACIÓN ACÚSTICA MULTIVARIABLE (WEB AUDIO API)
+     * ============================================================================
+     */
+    class AudioSonifier {
+      constructor() {
+        this.ctx = null;
+        this.osc1 = null;
+        this.osc2 = null;
+        this.osc3 = null;
+        this.gainNode = null;
+        this.filterNode = null;
+        this.isEnabled = false;
+        this.mode = 'double';
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+      }
+
+      init() {
+        if (this.ctx) return;
+        try {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+
+          this.gainNode = this.ctx.createGain();
+          this.gainNode.gain.setValueAtTime(0.0, this.ctx.currentTime);
+
+          this.filterNode = this.ctx.createBiquadFilter();
+          this.filterNode.type = 'lowpass';
+          this.filterNode.frequency.setValueAtTime(800, this.ctx.currentTime);
+
+          this.osc1 = this.ctx.createOscillator();
+          this.osc1.type = 'sine';
+          this.osc1.frequency.setValueAtTime(220, this.ctx.currentTime);
+
+          this.osc2 = this.ctx.createOscillator();
+          this.osc2.type = 'triangle';
+          this.osc2.frequency.setValueAtTime(440, this.ctx.currentTime);
+
+          this.osc3 = this.ctx.createOscillator();
+          this.osc3.type = 'sawtooth';
+          this.osc3.frequency.setValueAtTime(660, this.ctx.currentTime);
+
+          this.osc1.connect(this.filterNode);
+          this.osc2.connect(this.filterNode);
+          this.osc3.connect(this.filterNode);
+          this.filterNode.connect(this.gainNode);
+          this.gainNode.connect(this.ctx.destination);
+
+          this.osc1.start();
+          this.osc2.start();
+          this.osc3.start();
+        } catch (e) {
+          console.warn('AudioContext no inicializado:', e);
+        }
+      }
+
+      toggle() {
+        if (!this.ctx) this.init();
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+        this.isEnabled = !this.isEnabled;
+        if (this.gainNode && this.ctx) {
+          const targetGain = this.isEnabled ? 0.08 : 0.0;
+          this.gainNode.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.05);
+        }
+        return this.isEnabled;
+      }
+
+      update(statePayload) {
+        if (!this.isEnabled || !this.ctx || !statePayload) return;
+
+        const { state, energy } = statePayload;
+        const t = this.ctx.currentTime;
+
+        const freq1 = 180 + Math.min(600, Math.abs(state.omega1) * 35);
+        const freq2 = 260 + Math.min(900, Math.abs(state.omega2) * 45);
+        const freq3 = 340 + Math.min(1200, Math.abs(state.omega3) * 55);
+
+        if (this.osc1) this.osc1.frequency.setTargetAtTime(freq1, t, 0.03);
+        if (this.osc2) this.osc2.frequency.setTargetAtTime(this.mode !== 'simple' ? freq2 : 0, t, 0.03);
+        if (this.osc3) this.osc3.frequency.setTargetAtTime(this.mode === 'triple' ? freq3 : 0, t, 0.03);
+
+        if (this.filterNode && energy) {
+          const cutoff = 400 + Math.min(2400, energy.kinetic * 50);
+          this.filterNode.frequency.setTargetAtTime(cutoff, t, 0.04);
+        }
+      }
+    }
+
+    /**
+     * ============================================================================
+     * CONTROLADOR PRINCIPAL Y ORQUESTADOR DE LA APLICACIÓN MULTIMODO
+     * ============================================================================
+     */
+    class MultiPendulumApp {
+      constructor() {
+        this.worker = null;
+        this.renderer = null;
+        this.telemetry = null;
+        this.audio = null;
+
+        this.systemMode = 'double'; // 'simple', 'double', 'triple'
+        this.isRunning = false;
+        this.latestPayload = null;
+
+        this.config = {
+          mode: 'double',
+          l1: 1.0, l2: 1.0, l3: 1.0,
+          m1: 1.0, m2: 1.0, m3: 1.0,
+          g: 9.81,
+          damping: 0.0,
+          theta1: Math.PI / 2,
+          theta2: Math.PI / 2,
+          theta3: Math.PI / 2,
+          omega1: 0.0,
+          omega2: 0.0,
+          omega3: 0.0,
+          dt: 0.0005,
+          subSteps: 30,
+          timeScale: 1.0,
+          shadowEnabled: true,
+          shadowDelta: 1e-4
+        };
+
+        this.init();
+      }
+
+      init() {
+        this.initElements();
+        this.initWorker();
+        this.initRenderer();
+        this.initTelemetry();
+        this.initAudio();
+        this.bindEvents();
+        this.setupSystemTabs();
+        this.updateSystemModeUI('double');
+        this.startRenderLoop();
+      }
+
+      initElements() {
+        this.mainCanvas = document.getElementById('mainCanvas');
+        this.phaseCanvas = document.getElementById('phaseCanvas');
+        this.energyCanvas = document.getElementById('energyCanvas');
+        this.equationsContainer = document.getElementById('equationsContainer');
+
+        this.btnPlayPause = document.getElementById('btnPlayPause');
+        this.btnReset = document.getElementById('btnReset');
+        this.btnClearTrails = document.getElementById('btnClearTrails');
+        this.btnAudio = document.getElementById('btnAudio');
+
+        this.appHeaderTitle = document.getElementById('appHeaderTitle');
+        this.appHeaderSub = document.getElementById('appHeaderSub');
+        this.paramSectionTitle = document.getElementById('paramSectionTitle');
+
+        this.inputL1 = document.getElementById('sliderL1');
+        this.inputL2 = document.getElementById('sliderL2');
+        this.inputL3 = document.getElementById('sliderL3');
+        this.inputM1 = document.getElementById('sliderM1');
+        this.inputM2 = document.getElementById('sliderM2');
+        this.inputM3 = document.getElementById('sliderM3');
+        this.inputG = document.getElementById('sliderG');
+        this.inputDamping = document.getElementById('sliderDamping');
+        this.inputTimeScale = document.getElementById('sliderTimeScale');
+        this.inputSubSteps = document.getElementById('sliderSubSteps');
+        this.inputTrailLength = document.getElementById('sliderTrailLength');
+
+        this.inputTheta1 = document.getElementById('sliderTheta1');
+        this.inputTheta2 = document.getElementById('sliderTheta2');
+        this.inputTheta3 = document.getElementById('sliderTheta3');
+
+        this.toggleShadow = document.getElementById('toggleShadow');
+        this.toggleVectors = document.getElementById('toggleVectors');
+        this.toggleGrid = document.getElementById('toggleGrid');
+        this.selectPhaseMode = document.getElementById('selectPhaseMode');
+
+        this.hudTheta1 = document.getElementById('hudTheta1');
+        this.hudTheta2 = document.getElementById('hudTheta2');
+        this.hudTheta3 = document.getElementById('hudTheta3');
+        this.hudOmega1 = document.getElementById('hudOmega1');
+        this.hudOmega2 = document.getElementById('hudOmega2');
+        this.hudOmega3 = document.getElementById('hudOmega3');
+        this.hudAlpha1 = document.getElementById('hudAlpha1');
+        this.hudAlpha2 = document.getElementById('hudAlpha2');
+        this.hudAlpha3 = document.getElementById('hudAlpha3');
+        this.hudEnergyT = document.getElementById('hudEnergyT');
+        this.hudEnergyV = document.getElementById('hudEnergyV');
+        this.hudEnergyTotal = document.getElementById('hudEnergyTotal');
+        this.hudEnergyError = document.getElementById('hudEnergyError');
+        this.hudDivergence = document.getElementById('hudDivergence');
+        this.hudSimTime = document.getElementById('hudSimTime');
+        this.hudFps = document.getElementById('hudFps');
+
+        this.presetGridContainer = document.getElementById('presetGridContainer');
+      }
+
+      initWorker() {
+        this.worker = createUniversalWorker();
+
+        this.worker.onmessage = (event) => {
+          const msg = event.data;
+          if (!msg) return;
+
+          if (msg.type === 'STATE_UPDATE') {
+            this.latestPayload = msg.payload;
+
+            if (this.renderer) {
+              this.renderer.updateData(this.latestPayload, {
+                l1: this.config.l1,
+                l2: this.config.l2,
+                l3: this.config.l3,
+                m1: this.config.m1,
+                m2: this.config.m2,
+                m3: this.config.m3
+              });
+            }
+
+            if (this.telemetry) {
+              this.telemetry.pushData(this.latestPayload);
+            }
+
+            if (this.audio) {
+              this.audio.update(this.latestPayload);
+            }
+
+            this.updateHUD(this.latestPayload);
+          } else if (msg.type === 'STATUS') {
+            if (msg.payload.status === 'RUNNING') {
+              this.isRunning = true;
+              this.updatePlayPauseUI(true);
+            } else if (msg.payload.status === 'PAUSED' || msg.payload.status === 'READY') {
+              this.isRunning = false;
+              this.updatePlayPauseUI(false);
+            }
+          }
+        };
+
+        this.worker.postMessage({
+          type: 'INIT',
+          payload: { ...this.config }
+        });
+      }
+
+      initRenderer() {
+        this.renderer = new PendulumRenderer(this.mainCanvas, {
+          trailLength: parseInt(this.inputTrailLength?.value || 1200, 10),
+          showShadow: this.config.shadowEnabled,
+          showVectors: this.toggleVectors?.checked || false,
+          showGrid: this.toggleGrid?.checked !== false
+        });
+
+        this.renderer.onDragStateChange = (newState) => {
+          this.config.theta1 = newState.theta1;
+          this.config.theta2 = newState.theta2;
+          this.config.theta3 = newState.theta3;
+
+          if (this.inputTheta1) this.inputTheta1.value = ((newState.theta1 * 180) / Math.PI).toFixed(1);
+          if (this.inputTheta2) this.inputTheta2.value = ((newState.theta2 * 180) / Math.PI).toFixed(1);
+          if (this.inputTheta3) this.inputTheta3.value = ((newState.theta3 * 180) / Math.PI).toFixed(1);
+
+          this.updateSliderLabel('valTheta1', `${this.inputTheta1.value}°`);
+          this.updateSliderLabel('valTheta2', `${this.inputTheta2.value}°`);
+          this.updateSliderLabel('valTheta3', `${this.inputTheta3.value}°`);
+
+          this.worker.postMessage({
+            type: 'SET_STATE',
+            payload: {
+              theta1: newState.theta1,
+              theta2: newState.theta2,
+              theta3: newState.theta3,
+              omega1: 0,
+              omega2: 0,
+              omega3: 0
+            }
+          });
+        };
+      }
+
+      initTelemetry() {
+        this.telemetry = new TelemetryModule(this.phaseCanvas, this.energyCanvas, this.equationsContainer);
+      }
+
+      initAudio() {
+        this.audio = new AudioSonifier();
+      }
+
+      setupSystemTabs() {
+        const sysButtons = document.querySelectorAll('.sys-tab-btn');
+        sysButtons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            sysButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const targetMode = btn.getAttribute('data-system');
+            this.switchSystemMode(targetMode);
+          });
+        });
+      }
+
+      switchSystemMode(newMode) {
+        this.systemMode = newMode;
+        this.config.mode = newMode;
+
+        if (this.renderer) this.renderer.setMode(newMode);
+        if (this.telemetry) this.telemetry.setMode(newMode);
+        if (this.audio) this.audio.setMode(newMode);
+
+        this.updateSystemModeUI(newMode);
+
+        this.worker.postMessage({
+          type: 'RESET',
+          payload: { ...this.config, mode: newMode }
+        });
+
+        if (this.renderer) this.renderer.clearTrails();
+        if (this.telemetry) this.telemetry.clear();
+      }
+
+      updateSystemModeUI(mode) {
+        // Títulos de Header
+        if (mode === 'simple') {
+          this.appHeaderTitle.textContent = 'SIMULADOR DE PÉNDULO SIMPLE';
+          this.appHeaderSub.textContent = 'Dinámica No Lineal // 1 Grado de Libertad // Integrador RK4';
+          this.paramSectionTitle.textContent = 'Parámetros del Péndulo Simple';
+        } else if (mode === 'double') {
+          this.appHeaderTitle.textContent = 'SIMULADOR DE PÉNDULO DOBLE';
+          this.appHeaderSub.textContent = 'Dinámica Caótica Lagrangiana // 2 Grados de Libertad // Integrador RK4';
+          this.paramSectionTitle.textContent = 'Parámetros del Péndulo Doble';
+        } else if (mode === 'triple') {
+          this.appHeaderTitle.textContent = 'SIMULADOR DE PÉNDULO TRIPLE';
+          this.appHeaderSub.textContent = 'Dinámica Hipercaótica de 3 Cuerpos // Matriz 3x3 RK4 // Web Worker';
+          this.paramSectionTitle.textContent = 'Parámetros del Péndulo Triple';
+        }
+
+        // Mostrar / Ocultar Filas de Sliders
+        const rowL2 = document.getElementById('row-l2');
+        const rowM2 = document.getElementById('row-m2');
+        const rowTheta2 = document.getElementById('row-theta2');
+        const rowL3 = document.getElementById('row-l3');
+        const rowM3 = document.getElementById('row-m3');
+        const rowTheta3 = document.getElementById('row-theta3');
+
+        if (mode === 'simple') {
+          [rowL2, rowM2, rowTheta2, rowL3, rowM3, rowTheta3].forEach(el => { if (el) el.style.display = 'none'; });
+        } else if (mode === 'double') {
+          [rowL2, rowM2, rowTheta2].forEach(el => { if (el) el.style.display = 'flex'; });
+          [rowL3, rowM3, rowTheta3].forEach(el => { if (el) el.style.display = 'none'; });
+        } else if (mode === 'triple') {
+          [rowL2, rowM2, rowTheta2, rowL3, rowM3, rowTheta3].forEach(el => { if (el) el.style.display = 'flex'; });
+        }
+
+        // Celdas de telemetría
+        const cellTh2 = document.getElementById('cell-theta2');
+        const cellTh3 = document.getElementById('cell-theta3');
+        const cellW2 = document.getElementById('cell-omega2');
+        const cellW3 = document.getElementById('cell-omega3');
+        const cellA2 = document.getElementById('cell-alpha2');
+        const cellA3 = document.getElementById('cell-alpha3');
+
+        if (mode === 'simple') {
+          [cellTh2, cellTh3, cellW2, cellW3, cellA2, cellA3].forEach(el => { if (el) el.style.display = 'none'; });
+        } else if (mode === 'double') {
+          [cellTh2, cellW2, cellA2].forEach(el => { if (el) el.style.display = 'block'; });
+          [cellTh3, cellW3, cellA3].forEach(el => { if (el) el.style.display = 'none'; });
+        } else if (mode === 'triple') {
+          [cellTh2, cellTh3, cellW2, cellW3, cellA2, cellA3].forEach(el => { if (el) el.style.display = 'block'; });
+        }
+
+        this.renderPresetsForMode(mode);
+      }
+
+      renderPresetsForMode(mode) {
+        if (!this.presetGridContainer) return;
+
+        let presets = [];
+        if (mode === 'simple') {
+          presets = [
+            { id: 'simp-small', title: '〰️ Pequeñas Oscilaciones (15°)', cfg: { theta1: 15, l1: 1.0, m1: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'simp-large', title: '🌊 Gran Amplitud (170°)', cfg: { theta1: 170, l1: 1.0, m1: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'simp-invert', title: '📍 Invertido Límite (179.9°)', cfg: { theta1: 179.9, l1: 1.0, m1: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'simp-moon', title: '🌙 Gravedad Lunar (1.62 m/s²)', cfg: { theta1: 90, l1: 1.2, m1: 1.0, g: 1.62, damping: 0.0 } },
+            { id: 'simp-jupiter', title: '🪐 Gravedad Júpiter (24.8 m/s²)', cfg: { theta1: 90, l1: 0.8, m1: 1.5, g: 24.79, damping: 0.0 } },
+            { id: 'simp-damped', title: '🎯 Amortiguado Crítico', cfg: { theta1: 120, l1: 1.0, m1: 1.0, g: 9.81, damping: 0.25 } }
+          ];
+        } else if (mode === 'double') {
+          presets = [
+            { id: 'chaos-hi', title: '🌀 Caos Alta Energía (175°)', cfg: { theta1: 175, theta2: 175, l1: 1.0, l2: 1.0, m1: 1.0, m2: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'flip-loop', title: '🔄 Doble Bucle Acrobático', cfg: { theta1: 135, theta2: -135, l1: 1.0, l2: 0.9, m1: 1.5, m2: 0.8, g: 9.81, damping: 0.0 } },
+            { id: 'inphase', title: '〰️ Modo Normal (En Fase)', cfg: { theta1: 10, theta2: 14.14, l1: 1.0, l2: 1.0, m1: 1.0, m2: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'antiphase', title: '⚡ Modo Normal (Anti-Fase)', cfg: { theta1: 10, theta2: -14.14, l1: 1.0, l2: 1.0, m1: 1.0, m2: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'moon-d', title: '🌙 Gravedad Lunar', cfg: { theta1: 90, theta2: 90, l1: 1.2, l2: 0.8, m1: 1.0, m2: 1.0, g: 1.62, damping: 0.0 } },
+            { id: 'damped-d', title: '🎯 Atractor Disipativo', cfg: { theta1: 110, theta2: 60, l1: 1.0, l2: 1.0, m1: 1.2, m2: 0.8, g: 9.81, damping: 0.08 } }
+          ];
+        } else if (mode === 'triple') {
+          presets = [
+            { id: 'trip-hi-chaos', title: '💥 Hipercaos Triple (170°)', cfg: { theta1: 170, theta2: 170, theta3: 170, l1: 0.9, l2: 0.8, l3: 0.7, m1: 1.2, m2: 1.0, m3: 0.8, g: 9.81, damping: 0.0 } },
+            { id: 'trip-whip', title: '🌪️ Cascada y Efecto Látigo', cfg: { theta1: 175, theta2: 90, theta3: 0, l1: 1.1, l2: 0.8, l3: 0.6, m1: 2.0, m2: 1.0, m3: 0.5, g: 9.81, damping: 0.0 } },
+            { id: 'trip-loops', title: '🔄 Acrobacia Triple 360°', cfg: { theta1: 150, theta2: -150, theta3: 150, l1: 0.8, l2: 0.8, l3: 0.8, m1: 1.0, m2: 1.0, m3: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'trip-modes', title: '〰️ Modo Normal 3-Cuerpos', cfg: { theta1: 10, theta2: 14, theta3: 18, l1: 0.9, l2: 0.9, l3: 0.9, m1: 1.0, m2: 1.0, m3: 1.0, g: 9.81, damping: 0.0 } },
+            { id: 'trip-jupiter', title: '🪐 Hipergravedad Júpiter', cfg: { theta1: 90, theta2: 90, theta3: 90, l1: 0.7, l2: 0.7, l3: 0.7, m1: 1.0, m2: 1.0, m3: 1.0, g: 24.79, damping: 0.0 } },
+            { id: 'trip-damped', title: '🎯 Espiral Disipativa 3D', cfg: { theta1: 120, theta2: -80, theta3: 40, l1: 0.9, l2: 0.8, l3: 0.7, m1: 1.0, m2: 1.0, m3: 1.0, g: 9.81, damping: 0.06 } }
+          ];
+        }
+
+        this.presetGridContainer.innerHTML = '';
+        presets.forEach(p => {
+          const btn = document.createElement('button');
+          btn.className = 'btn-preset';
+          btn.textContent = p.title;
+          btn.addEventListener('click', () => this.applyPresetConfig(p.cfg));
+          this.presetGridContainer.appendChild(btn);
+        });
+      }
+
+      applyPresetConfig(p) {
+        if (p.theta1 !== undefined) this.config.theta1 = (p.theta1 * Math.PI) / 180;
+        if (p.theta2 !== undefined) this.config.theta2 = (p.theta2 * Math.PI) / 180;
+        if (p.theta3 !== undefined) this.config.theta3 = (p.theta3 * Math.PI) / 180;
+        this.config.omega1 = 0;
+        this.config.omega2 = 0;
+        this.config.omega3 = 0;
+
+        if (p.l1 !== undefined) this.config.l1 = p.l1;
+        if (p.l2 !== undefined) this.config.l2 = p.l2;
+        if (p.l3 !== undefined) this.config.l3 = p.l3;
+        if (p.m1 !== undefined) this.config.m1 = p.m1;
+        if (p.m2 !== undefined) this.config.m2 = p.m2;
+        if (p.m3 !== undefined) this.config.m3 = p.m3;
+        if (p.g !== undefined) this.config.g = p.g;
+        if (p.damping !== undefined) this.config.damping = p.damping;
+
+        if (p.theta1 !== undefined) this.setSlider('sliderTheta1', 'valTheta1', p.theta1, '°');
+        if (p.theta2 !== undefined) this.setSlider('sliderTheta2', 'valTheta2', p.theta2, '°');
+        if (p.theta3 !== undefined) this.setSlider('sliderTheta3', 'valTheta3', p.theta3, '°');
+        if (p.l1 !== undefined) this.setSlider('sliderL1', 'valL1', p.l1, ' m');
+        if (p.l2 !== undefined) this.setSlider('sliderL2', 'valL2', p.l2, ' m');
+        if (p.l3 !== undefined) this.setSlider('sliderL3', 'valL3', p.l3, ' m');
+        if (p.m1 !== undefined) this.setSlider('sliderM1', 'valM1', p.m1, ' kg');
+        if (p.m2 !== undefined) this.setSlider('sliderM2', 'valM2', p.m2, ' kg');
+        if (p.m3 !== undefined) this.setSlider('sliderM3', 'valM3', p.m3, ' kg');
+        if (p.g !== undefined) this.setSlider('sliderG', 'valG', p.g, ' m/s²');
+        if (p.damping !== undefined) this.setSlider('sliderDamping', 'valDamping', p.damping, '');
+
+        this.worker.postMessage({
+          type: 'RESET',
+          payload: { ...this.config, mode: this.systemMode }
+        });
+
+        if (this.renderer) this.renderer.clearTrails();
+        if (this.telemetry) this.telemetry.clear();
+      }
+
+      setSlider(sliderId, labelId, val, unit) {
+        const el = document.getElementById(sliderId);
+        if (el) {
+          el.value = val;
+          this.updateSliderLabel(labelId, `${val}${unit}`);
+        }
+      }
+
+      updateSliderLabel(labelId, text) {
+        const el = document.getElementById(labelId);
+        if (el) el.textContent = text;
+      }
+
+      bindEvents() {
+        this.btnPlayPause.addEventListener('click', () => {
+          if (this.isRunning) {
+            this.worker.postMessage({ type: 'PAUSE' });
+          } else {
+            this.worker.postMessage({ type: 'START' });
+          }
+        });
+
+        this.btnReset.addEventListener('click', () => {
+          this.worker.postMessage({
+            type: 'RESET',
+            payload: { ...this.config, mode: this.systemMode }
+          });
+          if (this.renderer) this.renderer.clearTrails();
+          if (this.telemetry) this.telemetry.clear();
+        });
+
+        this.btnClearTrails.addEventListener('click', () => {
+          if (this.renderer) this.renderer.clearTrails();
+          if (this.telemetry) this.telemetry.clear();
+        });
+
+        this.btnAudio.addEventListener('click', () => {
+          const active = this.audio.toggle();
+          this.btnAudio.classList.toggle('active', active);
+          this.btnAudio.innerHTML = active 
+            ? '<span class="icon">🔊</span> Audio: ON' 
+            : '<span class="icon">🔇</span> Audio: OFF';
+        });
+
+        const bindSlider = (slider, labelId, unit, configKey, isAngle = false) => {
+          if (!slider) return;
+          slider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.updateSliderLabel(labelId, `${val}${unit}`);
+
+            if (isAngle) {
+              const rad = (val * Math.PI) / 180;
+              this.config[configKey] = rad;
+              this.worker.postMessage({
+                type: 'SET_STATE',
+                payload: { [configKey]: rad, omega1: 0, omega2: 0, omega3: 0 }
+              });
+            } else {
+              this.config[configKey] = val;
+              this.worker.postMessage({
+                type: 'UPDATE_PARAMS',
+                payload: { [configKey]: val, mode: this.systemMode }
+              });
+            }
+          });
+        };
+
+        bindSlider(this.inputL1, 'valL1', ' m', 'l1');
+        bindSlider(this.inputL2, 'valL2', ' m', 'l2');
+        bindSlider(this.inputL3, 'valL3', ' m', 'l3');
+        bindSlider(this.inputM1, 'valM1', ' kg', 'm1');
+        bindSlider(this.inputM2, 'valM2', ' kg', 'm2');
+        bindSlider(this.inputM3, 'valM3', ' kg', 'm3');
+        bindSlider(this.inputG, 'valG', ' m/s²', 'g');
+        bindSlider(this.inputDamping, 'valDamping', '', 'damping');
+        bindSlider(this.inputTimeScale, 'valTimeScale', 'x', 'timeScale');
+        bindSlider(this.inputSubSteps, 'valSubSteps', '', 'subSteps');
+
+        bindSlider(this.inputTheta1, 'valTheta1', '°', 'theta1', true);
+        bindSlider(this.inputTheta2, 'valTheta2', '°', 'theta2', true);
+        bindSlider(this.inputTheta3, 'valTheta3', '°', 'theta3', true);
+
+        if (this.inputTrailLength) {
+          this.inputTrailLength.addEventListener('input', (e) => {
+            const len = parseInt(e.target.value, 10);
+            this.updateSliderLabel('valTrailLength', `${len} pts`);
+            if (this.renderer) this.renderer.options.trailLength = len;
+          });
+        }
+
+        if (this.toggleShadow) {
+          this.toggleShadow.addEventListener('change', (e) => {
+            this.config.shadowEnabled = e.target.checked;
+            if (this.renderer) this.renderer.options.showShadow = e.target.checked;
+            this.worker.postMessage({
+              type: 'UPDATE_PARAMS',
+              payload: { shadowEnabled: e.target.checked }
+            });
+          });
+        }
+
+        if (this.toggleVectors) {
+          this.toggleVectors.addEventListener('change', (e) => {
+            if (this.renderer) this.renderer.options.showVectors = e.target.checked;
+          });
+        }
+
+        if (this.toggleGrid) {
+          this.toggleGrid.addEventListener('change', (e) => {
+            if (this.renderer) this.renderer.options.showGrid = e.target.checked;
+          });
+        }
+
+        if (this.selectPhaseMode) {
+          this.selectPhaseMode.addEventListener('change', (e) => {
+            if (this.telemetry) this.telemetry.setPhaseMode(e.target.value);
+          });
+        }
+
+        // Navegación de solapas laterales (Parámetros / Telemetría / Presets)
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabCards = document.querySelectorAll('.card-section[data-tab-content]');
+
+        tabButtons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const targetTab = btn.getAttribute('data-tab');
+
+            tabCards.forEach(card => {
+              const allowedTabs = (card.getAttribute('data-tab-content') || '').split(' ');
+              if (allowedTabs.includes(targetTab)) {
+                card.classList.remove('tab-hidden');
+              } else {
+                card.classList.add('tab-hidden');
+              }
+            });
+
+            if (this.telemetry) {
+              setTimeout(() => this.telemetry.onResize(), 20);
+            }
+          });
+        });
+
+        const initialTab = document.querySelector('.tab-btn.active');
+        if (initialTab) initialTab.click();
+
+        window.addEventListener('keydown', (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+          if (e.code === 'Space') {
+            e.preventDefault();
+            this.btnPlayPause.click();
+          } else if (e.code === 'KeyR') {
+            this.btnReset.click();
+          } else if (e.code === 'KeyC') {
+            this.btnClearTrails.click();
+          } else if (e.code === 'Digit1') {
+            const btn = document.querySelector('.sys-tab-btn[data-system="simple"]');
+            if (btn) btn.click();
+          } else if (e.code === 'Digit2') {
+            const btn = document.querySelector('.sys-tab-btn[data-system="double"]');
+            if (btn) btn.click();
+          } else if (e.code === 'Digit3') {
+            const btn = document.querySelector('.sys-tab-btn[data-system="triple"]');
+            if (btn) btn.click();
+          }
+        });
+      }
+
+      updatePlayPauseUI(running) {
+        if (running) {
+          this.btnPlayPause.classList.add('btn-pause');
+          this.btnPlayPause.innerHTML = '<span class="icon">⏸</span> Pausar';
+        } else {
+          this.btnPlayPause.classList.remove('btn-pause');
+          this.btnPlayPause.innerHTML = '<span class="icon">▶</span> Iniciar';
+        }
+      }
+
+      updateHUD(payload) {
+        const { state, energy, shadow, timestamp } = payload;
+        const radToDeg = 180 / Math.PI;
+
+        if (this.hudTheta1) this.hudTheta1.textContent = `${(state.theta1Wrapped * radToDeg).toFixed(1)}° (${state.theta1.toFixed(2)} rad)`;
+        if (this.hudTheta2) this.hudTheta2.textContent = `${(state.theta2Wrapped * radToDeg).toFixed(1)}° (${state.theta2.toFixed(2)} rad)`;
+        if (this.hudTheta3) this.hudTheta3.textContent = `${(state.theta3Wrapped * radToDeg).toFixed(1)}° (${state.theta3.toFixed(2)} rad)`;
+
+        if (this.hudOmega1) this.hudOmega1.textContent = `${state.omega1.toFixed(2)} rad/s`;
+        if (this.hudOmega2) this.hudOmega2.textContent = `${state.omega2.toFixed(2)} rad/s`;
+        if (this.hudOmega3) this.hudOmega3.textContent = `${state.omega3.toFixed(2)} rad/s`;
+
+        if (this.hudAlpha1) this.hudAlpha1.textContent = `${state.alpha1.toFixed(2)} rad/s²`;
+        if (this.hudAlpha2) this.hudAlpha2.textContent = `${state.alpha2.toFixed(2)} rad/s²`;
+        if (this.hudAlpha3) this.hudAlpha3.textContent = `${state.alpha3.toFixed(2)} rad/s²`;
+
+        if (this.hudEnergyT) this.hudEnergyT.textContent = `${energy.kinetic.toFixed(2)} J`;
+        if (this.hudEnergyV) this.hudEnergyV.textContent = `${energy.potential.toFixed(2)} J`;
+        if (this.hudEnergyTotal) this.hudEnergyTotal.textContent = `${energy.total.toFixed(3)} J`;
+
+        if (this.hudEnergyError) {
+          const errStr = energy.energyError < 1e-4 
+            ? `${(energy.energyError).toExponential(2)}` 
+            : `${(energy.energyError * 100).toFixed(4)}%`;
+          this.hudEnergyError.textContent = errStr;
+        }
+
+        if (this.hudDivergence && shadow) {
+          this.hudDivergence.textContent = `${shadow.divergence.toFixed(3)} m`;
+        }
+
+        if (this.hudSimTime) {
+          this.hudSimTime.textContent = `${timestamp.toFixed(2)} s`;
+        }
+      }
+
+      startRenderLoop() {
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+
+        const loop = (currentTime) => {
+          frameCount++;
+          if (currentTime - lastFpsUpdate >= 500) {
+            const fps = Math.round((frameCount * 1000) / (currentTime - lastFpsUpdate));
+            if (this.hudFps) this.hudFps.textContent = `${fps} FPS`;
+            frameCount = 0;
+            lastFpsUpdate = currentTime;
+          }
+
+          if (this.renderer) {
+            this.renderer.render();
+          }
+
+          if (this.telemetry) {
+            this.telemetry.render();
+          }
+
+          requestAnimationFrame(loop);
+        };
+
+        requestAnimationFrame(loop);
+      }
+    }
+
+    // Inicialización automática
+    function startApplication() {
+      window.app = new MultiPendulumApp();
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startApplication);
+    } else {
+      startApplication();
+    }
+  </script>
+</body>
+</html>
